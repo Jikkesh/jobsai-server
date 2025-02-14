@@ -29,6 +29,6 @@ app = mount_gradio_app(app, job_interface, path="/gradio")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="localhost", port=8003)
+    uvicorn.run("main:app")
     #Swagger Doc: "http://localhost:8003/docs"
     
