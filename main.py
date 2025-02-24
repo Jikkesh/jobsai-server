@@ -1,5 +1,7 @@
 import os
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from db import engine, Base
 from routers import job_router, user_router
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,8 +31,26 @@ app.include_router(user_router.router)
 # Mount Gradio app at /gradio
 app = mount_gradio_app(app, job_interface, path="/gradio")
 
+#CMS System
+# Serve static files (including our index.html)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/cms", response_class=HTMLResponse)
+async def read_index():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
+
+@app.get("/add-job", response_class=HTMLResponse)
+async def read_addjobs():
+    with open("static/addjob.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
+
+
+
 # Get port from Render environment
 port = int(os.getenv("PORT", 8000))  # Default to 8000 if PORT not set
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="127.1.1.1", port=port)
