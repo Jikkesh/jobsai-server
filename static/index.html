@@ -213,6 +213,7 @@
                         <th>Category</th>
                         <th>Experience</th>
                         <th>Location</th>
+                        <th>Link</th>
                         <th>Posted Date</th>
                         <th>Actions</th>
                     </tr>
@@ -367,6 +368,7 @@
             <td>${job.category}</td>
             <td>${job.experience}</td>
             <td>${job.city}, ${job.state}</td>
+            <td><a href="${job.website_link}" target="_blank">Link</a></td>
             <td>${new Date(job.created_at).toLocaleDateString()}</td>
             <td>
               <button class="action-btn edit-btn" onclick="openEditModal(${job.id})">Edit</button>
