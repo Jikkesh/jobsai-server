@@ -6,7 +6,6 @@ from db import engine, Base
 from routers import job_router, user_router
 from fastapi.middleware.cors import CORSMiddleware
 from gradio.routes import mount_gradio_app
-from gradio_interface import job_interface
 import uvicorn
 
 # Initialize FastAPI app
@@ -28,8 +27,6 @@ Base.metadata.create_all(bind=engine)
 app.include_router(job_router.router)
 app.include_router(user_router.router)
 
-# Mount Gradio app at /gradio
-app = mount_gradio_app(app, job_interface, path="/gradio")
 
 #CMS System
 # Serve static files (including our index.html)

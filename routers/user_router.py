@@ -29,27 +29,76 @@ async def send_contact_email(form_data: ContactForm):
     SMTP_USER = os.getenv("SMTP_USER", "jikkekumar98@gmail.com")
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "your-app-password")
 
-    # Create an HTML message with highlighted text, a bookmark, and importance headers
     html_body = f"""
-    <html>
-      <body>
-        <h2>New Contact Form Submission:</h2>
-        <p><strong>Name:</strong> <mark>{form_data.name}</mark></p>
-        <p><strong>Email:</strong> <mark>{form_data.email}</mark></p>
-        <p><strong>Message:</strong> <mark>{form_data.message}</mark></p>
-        <!-- Bookmark anchor -->
-        <a id="bookmark"></a>
-        <p>You can bookmark this section using the above anchor.</p>
-      </body>
-    </html>
-    """
+<html>
+  <head>
+    <style>
+      body {{
+        background-color: #f0f4f8;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }}
+      .email-container {{
+        background-color: #ffffff;
+        max-width: 600px;
+        margin: 40px auto;
+        border: 1px solid #dcdcdc;
+        border-radius: 8px;
+        overflow: hidden;
+      }}
+      .email-header {{
+        background-color: #007bff;
+        padding: 20px;
+        text-align: center;
+        color: #ffffff;
+      }}
+      .email-content {{
+        padding: 20px;
+        color: #333333;
+      }}
+      .email-content p {{
+        line-height: 1.6;
+      }}
+      .email-footer {{
+        background-color: #f0f4f8;
+        padding: 10px;
+        text-align: center;
+        font-size: 12px;
+        color: #999999;
+      }}
+      .highlight {{
+        background-color: #e2f0ff;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="email-header">
+        <h2>New Contact Form Submission</h2>
+      </div>
+      <div class="email-content">
+        <p><strong>Name:</strong> <span class="highlight">{form_data.name}</span></p>
+        <p><strong>Email:</strong> <span class="highlight">{form_data.email}</span></p>
+        <p><strong>Message:</strong></p>
+        <p class="highlight">{form_data.message}</p>
+      </div>
+      <div class="email-footer">
+        <p>Jobs AI - Empowering Your Career Journey</p>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
 
     msg = MIMEMultipart()
     msg["From"] = SMTP_USER
-    msg["To"] = "techgrovestreet@gmail.com"
+    msg["To"] = "josephdrusela@gmail.com"
     msg["Subject"] = "New Contact Form Submission"
     
-    # Add headers to mark the email as important
     msg["X-Priority"] = "1"
     msg["Priority"] = "urgent"
     msg["Importance"] = "high"
@@ -61,8 +110,9 @@ async def send_contact_email(form_data: ContactForm):
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, "techgrovestreet@gmail.com", msg.as_string())
+            server.sendmail(SMTP_USER, ["josephdrusela@gmail.com"], msg.as_string())
         return {"message": "Email sent successfully"}
+    
     except Exception as e:
         raise HTTPException(
             status_code=500,
