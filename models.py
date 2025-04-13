@@ -7,7 +7,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    category = Column(String, index=True, nullable=False)  # Fresher, Internship, Remote, Part-time
+    category = Column(String, index=True, nullable=False)  # Fresher, Internship, Remote, Experienced
     company_name = Column(String, index=True, nullable=False)
     job_role = Column(String, index=True, nullable=False)
     website_link = Column(String, nullable=True)

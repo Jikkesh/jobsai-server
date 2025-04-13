@@ -96,7 +96,7 @@ async def send_contact_email(form_data: ContactForm):
 
     msg = MIMEMultipart()
     msg["From"] = SMTP_USER
-    msg["To"] = "josephdrusela@gmail.com"
+    msg["To"] = "jobsai2001@gmail.com"
     msg["Subject"] = "New Contact Form Submission"
     
     msg["X-Priority"] = "1"

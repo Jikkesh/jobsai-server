@@ -3,9 +3,8 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from db import engine, Base
-from routers import job_router, user_router
+from routers import job_router, user_router, ai_router
 from fastapi.middleware.cors import CORSMiddleware
-from gradio.routes import mount_gradio_app
 import uvicorn
 
 # Initialize FastAPI app
@@ -26,10 +25,10 @@ Base.metadata.create_all(bind=engine)
 # Include Routers
 app.include_router(job_router.router)
 app.include_router(user_router.router)
+app.include_router(ai_router.router)
 
 
-#CMS System
-# Serve static files (including our index.html)
+#CMS System Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/cms", response_class=HTMLResponse)

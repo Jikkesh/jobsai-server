@@ -33,6 +33,7 @@ def job_to_response(job: Job) -> JobResponse:
 # Endpoints
 # -------------------------------------------------------------------
 
+# Get Top Jobs from each Category based on Count
 @router.get("/top_jobs", response_model=Dict[str, List[CategoryResponse]])
 def get_top_jobs(db: Session = Depends(get_db)):
     """
@@ -46,7 +47,8 @@ def get_top_jobs(db: Session = Depends(get_db)):
     jobs_by_category = {}
 
     for category in categories:
-        jobs = db.query(Job).filter(Job.category == category).limit(5).all()
+        # Fetch jobs for the current category with order by created_at DESC
+        jobs = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc()).limit(5).all()
         job_responses = [job_to_response(job) for job in jobs]
         jobs_by_category[category.lower()] = [
             CategoryResponse(category=category, jobs_data=job_responses)
@@ -54,6 +56,7 @@ def get_top_jobs(db: Session = Depends(get_db)):
 
     return jobs_by_category
 
+#Get jobs by category with Pagination
 @router.get("/category/{category}", response_model=dict)
 def get_jobs_by_category(
     category: str,
@@ -70,7 +73,7 @@ def get_jobs_by_category(
     
     Returns a dictionary with the job list and total job count.
     """
-    query = db.query(Job).filter(Job.category == category)
+    query = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc())
     total_count = query.count()  # Total jobs for pagination
     jobs = query.offset((page - 1) * page_size).limit(page_size).all()
     
@@ -79,6 +82,7 @@ def get_jobs_by_category(
         "totalCount": total_count
     }
 
+#Get a Job by ID
 @router.get("/{job_id}", response_model=JobResponse)
 def get_job(job_id: int, db: Session = Depends(get_db)):
     """
@@ -91,6 +95,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     return job_to_response(job)
 
+#Get Image for a Job
 @router.get("/{job_id}/image")
 def get_job_image(job_id: int, db: Session = Depends(get_db)):
     """
@@ -107,6 +112,7 @@ def get_job_image(job_id: int, db: Session = Depends(get_db)):
     mime_type = mime_type or "application/octet-stream"
     return Response(content=job.image, media_type=mime_type)
 
+#Get all jobs
 @router.get("/", response_model=List[JobResponse])
 def get_jobs(db: Session = Depends(get_db)):
     """
@@ -114,9 +120,10 @@ def get_jobs(db: Session = Depends(get_db)):
     
     Returns a list of job responses.
     """
-    jobs = db.query(Job).all()
+    jobs = db.query(Job).order_by(Job.created_at.asc()).all()
     return [job_to_response(job) for job in jobs]
 
+#Create a Job
 @router.post("/", response_model=JobOut)
 async def create_job(
     category: str = Form(...),
@@ -170,6 +177,7 @@ async def create_job(
     db.refresh(new_job)
     return job_to_response(new_job)
 
+#Update Job 
 @router.put("/{job_id}", response_model=JobOut)
 async def update_job(
     job_id: int,
@@ -226,6 +234,7 @@ async def update_job(
     db.refresh(db_job)
     return job_to_response(db_job)
 
+#Delete a Job entry
 @router.delete("/{job_id}", response_model=JobOut)
 def delete_job(job_id: int, db: Session = Depends(get_db)):
     """
