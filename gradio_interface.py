@@ -1,11 +1,14 @@
 import gradio as gr
 import os
-import requests
 import json
-from datetime import datetime
-from ai_job_helper import generate_job_details
-import tempfile
+from datetime import datetime, timedelta
 import shutil
+
+# Import your DB session and Job model
+from db import SessionLocal  # your session maker from your db file
+from models import Job    # your SQLAlchemy Job model
+
+from ai_job_helper import generate_job_details
 
 # Constants
 JOB_CATEGORIES = ["Fresher", "Internship", "Remote", "Experienced"]
@@ -14,11 +17,12 @@ QUALIFICATIONS = ["Any Degree", "B.E/CSE", "B.Tech", "B.Sc"]
 
 def process_job_submission(
     category, company_name, job_role, website_link, state, city, 
-    experience, qualification, batch, salary_package, 
+    experience, batch, salary_package, 
     job_details, image
 ):
-    """Process the job submission and generate detailed sections using AI"""
-    
+    """Process the job submission, generate detailed sections using AI,
+       and save the job to the database using the Job model.
+    """
     # Generate job sections using AI
     try:
         print("Generating AI content...")
@@ -34,67 +38,56 @@ def process_job_submission(
     except Exception as e:
         return f"Error generating content with AI: {str(e)}"
     
-    # Handle image upload
-    image_path = None
+    # Handle image upload and conversion to binary data for DB storage
+    job_image = None
     if image is not None:
-        # Create a directory for uploaded images if it doesn't exist
-        os.makedirs("uploads", exist_ok=True)
-        
-        # Create a unique filename based on company name and timestamp
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        clean_company_name = "".join(c if c.isalnum() else "_" for c in company_name)
-        filename = f"{clean_company_name}_{timestamp}{os.path.splitext(image)[1]}"
-        
-        # Save the uploaded image
-        image_path = os.path.join("uploads", filename)
-        shutil.copy(image, image_path)
+        # For DB storage, we read the file in binary mode.
+        try:
+            with open(image, "rb") as f:
+                job_image = f.read()
+        except Exception as e:
+            return f"Error processing image file: {str(e)}"
     
-    # In a real application, you would save this data to a database
-    # For this example, we'll just create a structured result to display
-    job_data = {
-        "category": category,
-        "company_name": company_name,
-        "job_role": job_role,
-        "website_link": website_link,
-        "state": state,
-        "city": city,
-        "experience": experience,
-        "qualification": qualification,
-        "batch": batch,
-        "salary_package": salary_package,
-        "job_description": job_description,
-        "key_responsibilities": key_responsibilities,
-        "about_company": about_company,
-        "selection_process": selection_process,
-        "qualification_details": qualification_details,
-        "image_path": image_path
-    }
-    
-    # Save job data to a JSON file (for demonstration purposes)
+    # Set up the database session
+    db = SessionLocal()
     try:
-        # Create jobs directory if it doesn't exist
-        os.makedirs("jobs", exist_ok=True)
+        # Create a new Job instance
+        new_job = Job(
+            category=category,
+            company_name=company_name,
+            job_role=job_role,
+            website_link=website_link,
+            state=state,
+            city=city,
+            experience=experience,
+            qualification= qualification_details,  # note: this corresponds to your model's "qualification" field
+            batch=batch,
+            salary_package=salary_package,
+            job_description=job_description,
+            key_responsibilty=key_responsibilities,  # note the field name: "key_responsibilty" in the model.
+            about_company=about_company,
+            selection_process=selection_process,
+            image=job_image
+            # created_at and expiry_date will be auto-handled by the model defaults.
+        )
+        db.add(new_job)
+        db.commit()
+        db.refresh(new_job)  # To retrieve the auto-generated id, etc.
         
-        # Generate a unique filename
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"job_{timestamp}.json"
-        filepath = os.path.join("jobs", filename)
-        
-        # Write job data to file
-        with open(filepath, "w") as f:
-            json.dump(job_data, f, indent=2)
-            
-        return f"Job added successfully! Data saved to {filepath}"
+        return f"Job added successfully! Job ID: {new_job.id}"
     
     except Exception as e:
+        db.rollback()
         return f"Error saving job data: {str(e)}"
+    finally:
+        db.close()
 
 def create_interface():
-    """Create and configure the Gradio interface"""
+    """Create and configure the Gradio interface."""
     
     with gr.Blocks(title="Job Entry System", theme=gr.themes.Soft()) as app:
         gr.Markdown("# Job Entry System")
-        gr.Markdown("Enter job details below. The system will automatically generate detailed sections using AI.")
+        gr.Markdown("Enter job details below. The system will automatically generate detailed sections using AI and save the job details to the database.")
         
         with gr.Row():
             with gr.Column(scale=1):
@@ -153,7 +146,6 @@ def create_interface():
                 image = gr.File(
                     label="Company Image (Optional)",
                     file_types=["image"],
-                    info="Upload company logo or relevant image"
                 )
         
         # Main job details text area for AI processing
@@ -164,14 +156,14 @@ def create_interface():
             info="Paste the complete job posting or description here. The AI will automatically extract and format the key sections."
         )
         
-        # Submit button
+        # Submit button for job submission
         submit_btn = gr.Button("Submit Job", variant="primary")
         
-        # Output area
+        # Output area to show submission result
         output = gr.Textbox(label="Result")
         
         # Preview tabs for generated content
-        with gr.Accordion("Preview Generated Content", open=False):
+        with gr.Accordion("Generated AI Content Preview", open=False):
             with gr.Tabs():
                 with gr.TabItem("Job Description"):
                     job_desc_preview = gr.Markdown()
@@ -184,7 +176,7 @@ def create_interface():
                 with gr.TabItem("Qualification Details"):
                     qual_preview = gr.Markdown()
         
-        # Set up event handlers
+        # Set up event handler for job submission
         submit_btn.click(
             fn=process_job_submission,
             inputs=[
@@ -195,11 +187,12 @@ def create_interface():
             outputs=output
         )
         
-        # Add preview functionality
+        # Add "Generate with AI" button for previewing AI generated content
         def update_previews(job_details):
             try:
                 if not job_details or len(job_details.strip()) < 50:
-                    return "Please enter more detailed job information.", "", "", "", ""
+                    return ("Please enter more detailed job information.",
+                            "", "", "", "")
                 
                 result = generate_job_details(job_details)
                 return (
@@ -210,10 +203,10 @@ def create_interface():
                     result["qualification"]
                 )
             except Exception as e:
-                return f"Error: {str(e)}", "", "", "", ""
+                return (f"Error: {str(e)}", "", "", "", "")
         
-        preview_btn = gr.Button("Preview AI-Generated Content")
-        preview_btn.click(
+        generate_btn = gr.Button("Generate with AI")
+        generate_btn.click(
             fn=update_previews,
             inputs=[job_details],
             outputs=[job_desc_preview, resp_preview, company_preview, process_preview, qual_preview]
@@ -223,4 +216,4 @@ def create_interface():
 
 if __name__ == "__main__":
     app = create_interface()
-    app.launch(server_port=7860, server_name="0.0.0.0", share=True)
+    app.launch(server_port=7860, server_name="localhost", share=True)
