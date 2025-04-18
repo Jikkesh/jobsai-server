@@ -3,9 +3,11 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from db import engine, Base
-from routers import job_router, user_router, ai_router
+from routers import job_router, user_router
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from gradio_interface import create_interface
+import gradio as gr
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -25,7 +27,6 @@ Base.metadata.create_all(bind=engine)
 # Include Routers
 app.include_router(job_router.router)
 app.include_router(user_router.router)
-app.include_router(ai_router.router)
 
 
 #CMS System Serve static files
@@ -37,12 +38,8 @@ async def read_index():
         html_content = f.read()
     return HTMLResponse(content=html_content)
 
-@app.get("/add-job", response_class=HTMLResponse)
-async def read_addjobs():
-    with open("static/addjob.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content)
-
+gradio_blocks = create_interface()
+app = gr.mount_gradio_app(app, gradio_blocks, path="/add-job")
 
 
 # Get port from Render environment

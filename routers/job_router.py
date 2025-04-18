@@ -48,7 +48,7 @@ def get_top_jobs(db: Session = Depends(get_db)):
 
     for category in categories:
         # Fetch jobs for the current category with order by created_at DESC
-        jobs = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc()).limit(5).all()
+        jobs = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc()).limit(6).all()
         job_responses = [job_to_response(job) for job in jobs]
         jobs_by_category[category.lower()] = [
             CategoryResponse(category=category, jobs_data=job_responses)
