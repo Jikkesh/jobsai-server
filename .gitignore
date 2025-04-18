@@ -40,3 +40,4 @@ build/
 
 # Ignore Gradio cache
 gradio_cache/
+.gradio/

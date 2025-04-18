@@ -14,7 +14,7 @@ class Job(Base):
     state = Column(String, nullable=False)
     city = Column(String, nullable=False)
     experience = Column(String, nullable=True)
-    qualification = Column(String, nullable=False)
+    qualification = Column(Text, nullable=False)
     batch = Column(String, nullable=True)
     salary_package = Column(String, nullable=True)
     job_description = Column(Text, nullable=False)

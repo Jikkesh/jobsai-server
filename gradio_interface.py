@@ -5,6 +5,12 @@ from sqlalchemy.orm import Session
 from models import Job
 from db import SessionLocal
 
+# Import your DB session and Job model
+from db import SessionLocal  # your session maker from your db file
+from models import Job    # your SQLAlchemy Job model
+
+from ai_job_helper import generate_job_details
+
 # Constants
 JOB_CATEGORIES = ["Fresher", "Internship", "Remote", "Experienced"]
 EXPERIENCE_LEVELS = ["Fresher", "0-1 years", "0-2 years", "1-3 years", "3-5 years"]
@@ -70,7 +76,10 @@ def process_job_submission(
         db.close()
         return f"✅ Job added successfully with ID: {job_entry.id}"
     except Exception as e:
+        db.rollback()
         return f"Error saving job data: {str(e)}"
+    finally:
+        db.close()
 
 
 def create_interface():

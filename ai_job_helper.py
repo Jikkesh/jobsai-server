@@ -1,7 +1,6 @@
 import os
 import requests
 from typing import Dict, Optional
-import json
 
 # Constants for the API integration
 DEFAULT_MODEL = "gemma2-9b-it"
@@ -40,7 +39,7 @@ SYSTEM_PROMPTS = {
     "Use clear, concise language and maintain the original requirements. Generate it in HTML.")
 }
 
-def call_groq_api(api_key: str, prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -> str:
+def call_groq_api(prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -> str:
     """
     Make a call to the GROQ API to generate content
     
@@ -53,7 +52,7 @@ def call_groq_api(api_key: str, prompt: str, system_prompt: str, model: str = DE
         The generated text
     """
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
         "Content-Type": "application/json"
     }
     
@@ -92,19 +91,6 @@ def generate_job_details(job_description: str) -> Dict[str, str]:
     # Process each topic
     results = {}
     for topic, system_prompt in SYSTEM_PROMPTS.items():
-        results[topic] = call_groq_api(api_key, job_description, system_prompt)
+        results[topic] = call_groq_api( job_description, system_prompt)
     
     return results
-
-# Test function
-# if __name__ == "__main__":
-
-#     test_desc = """Software Engineer position at Tech Solutions Inc. Responsibilities include developing web applications, 
-#     debugging code, and working with the team. Requirements: Bachelor's degree in Computer Science, 
-#     2+ years of experience in JavaScript and Python."""
-    
-#     result = generate_job_details(test_desc)
-#     print(json.dumps(result, indent=2))
-#     #Print each section
-#     for section in result.items():
-#         print(f"Section: {section}\n\n")
