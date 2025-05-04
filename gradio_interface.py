@@ -4,6 +4,7 @@ from ai_job_helper import generate_job_details
 from sqlalchemy.orm import Session
 from models import Job
 from db import SessionLocal
+from upload_image import upload_job_image
 
 # Import your DB session and Job model
 from db import SessionLocal  # your session maker from your db file
@@ -46,10 +47,9 @@ def process_job_submission(
         return f"Error reading previewed content: {str(e)}"
 
     # Handle image upload
-    image_bytes = None
+    image_filename = None
     if image is not None:
-        with open(image, "rb") as f:
-            image_bytes = f.read()
+        image_filename = upload_job_image(image, company_name)
 
     try:
         db = SessionLocal()
@@ -68,7 +68,7 @@ def process_job_submission(
             key_responsibilty=key_responsibilities,
             about_company=about_company,
             selection_process=selection_process,
-            image=image_bytes,
+            image=image_filename,
         )
         db.add(job_entry)
         db.commit()
