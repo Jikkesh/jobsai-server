@@ -1,4 +1,4 @@
-#Backend Dockerfile
+#Backend DockerFile
 FROM python:3.12.6-slim
 
 WORKDIR /app
@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Enable auto-reload for development
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000", "--reload"]

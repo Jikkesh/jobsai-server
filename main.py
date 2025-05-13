@@ -27,6 +27,10 @@ Base.metadata.create_all(bind=engine)
 app.include_router(job_router.router)
 app.include_router(user_router.router)
 
+#Greetings
+app.get("/")
+async def root():
+    return {"message": "Hello World"}
 
 #CMS System Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
