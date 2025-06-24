@@ -14,7 +14,10 @@ POSTGRES_HOSTNAME = os.getenv("POSTGRES_HOSTNAME")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT")
 
 # Construct the database URL
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOSTNAME}:{POSTGRES_PORT}/{POSTGRES_DB}"
+# DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOSTNAME}:{POSTGRES_PORT}/{POSTGRES_DB}"
+DATABASE_URL = "postgresql://postgres:admin@localhost:5432/JobsAI"
+if DATABASE_URL is None:
+    raise ValueError("DATABASE_URL environment variable not set")
 
 engine = create_engine(DATABASE_URL) # type: ignore
 

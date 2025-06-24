@@ -47,7 +47,7 @@ class JobResponse(BaseModel):
     about_company: str
     selection_process: str
     image_url: Optional[str] = None
-    created_at: datetime
+    posted_on: datetime
     
     class Config:
         from_attributes = True
@@ -74,7 +74,7 @@ class JobUpdate(BaseModel):
 class JobOut(JobBase):
     """Schema for returning job details."""
     id: int
-    created_at: datetime
+    posted_on: datetime
     expiry_date: Optional[datetime] = None
 
     class Config:

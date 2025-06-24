@@ -22,8 +22,7 @@ class Job(Base):
     about_company = Column(Text, nullable=True)
     selection_process = Column(Text, nullable=True)
     image = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())  # Auto-set timestamp on insert
-    expiry_date = Column(DateTime, nullable=True, default=lambda: datetime.utcnow() + timedelta(days=15))  # Auto-expire after 15 days
+    posted_on = Column(DateTime, nullable=False) 
     
 
 class User(Base):

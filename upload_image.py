@@ -13,7 +13,6 @@ def upload_job_image(image, company_name: str) -> str:
     Accepts a file path (Gradio NamedString), opens it as a PIL image,
     compresses & resizes, and saves it with the company name.
     """
-    # from io import BytesIO
 
     # If the image is a path (Gradio NamedString), load it
     if hasattr(image, "name"):  # typical for Gradio file inputs

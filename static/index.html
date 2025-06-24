@@ -178,9 +178,8 @@
     <header>
         <nav>
             <ul>
-                <li><a href="/cms">Home</a></li>
-                Make open in new tab
-                <li><a href="/add-job" target="_blank" >Add New Job</a></li>
+                <li><a href="/cms/Admin">Home</a></li>
+                <li><a href="/add-job/Admin" target="_blank" >Add New Job</a></li>
             </ul>
         </nav>
         <h1>Job CMS Dashboard</h1>
@@ -188,11 +187,9 @@
     <div class="container">
         <!-- Search Section -->
         <section id="searchSection">
-            <h2>Search Jobs</h2>
             <form id="searchForm">
                 <label for="search_category">Category:</label>
                 <select id="search_category">
-                    <option value="">All Categories</option>
                     <option value="Fresher">Fresher</option>
                     <option value="Internship">Internship</option>
                     <option value="Remote">Remote</option>
@@ -370,7 +367,7 @@
             <td>${job.experience}</td>
             <td>${job.city}, ${job.state}</td>
             <td><a href="${job.website_link}" target="_blank">Link</a></td>
-            <td>${new Date(job.created_at).toLocaleDateString()}</td>
+            <td>${new Date(job.posted_on).toLocaleDateString()}</td>
             <td>
               <button class="action-btn edit-btn" onclick="openEditModal(${job.id})">Edit</button>
               <button class="action-btn delete-btn" onclick="deleteJob(${job.id})">Delete</button>

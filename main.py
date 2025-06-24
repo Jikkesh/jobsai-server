@@ -2,11 +2,15 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+import pytz
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from db import engine, Base
 from routers import job_router, user_router
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from gradio_interface import create_interface
+from daily_job import main as daily_job_main
 import gradio as gr
 
 # Initialize FastAPI app
@@ -35,21 +39,38 @@ async def root():
 #CMS System Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve images as static files
-app.mount("/images", StaticFiles(directory="uploaded_images"), name="images")
 
-@app.get("/cms", response_class=HTMLResponse)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_images")
+app.mount("/images", StaticFiles(directory=UPLOAD_DIR), name="images")
+
+@app.get("/cms/Admin", response_class=HTMLResponse)
 async def read_index():
     with open("static/index.html", "r", encoding="utf-8") as f:
         html_content = f.read()
     return HTMLResponse(content=html_content)
 
 gradio_blocks = create_interface()
-app = gr.mount_gradio_app(app, gradio_blocks, path="/add-job")
+app = gr.mount_gradio_app(app, gradio_blocks, path="/add-job/Admin")
 
 
 # Get port from Render environment
-port = int(os.getenv("PORT", 8000))  # Default to 8000 if PORT not set
+port = int(os.getenv("PORT", 3000))  # Default to 8000 if PORT not set
+
+sched = AsyncIOScheduler(timezone="Asia/Kolkata")
+
+@app.on_event("startup")
+def startup_event():
+
+    # Schedule daily cleanup @ 21:30 IST
+    india_tz = pytz.timezone("Asia/Kolkata")
+    sched.add_job(
+        daily_job_main,
+        CronTrigger(hour=20, minute=25, timezone=india_tz),
+        id="daily_job",
+        replace_existing=True,  
+    )
+    sched.start()
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.1.1.1", port=os.getenv("PORT", 8000), reload=True)
+    uvicorn.run("main:app", host="localhost", port=os.getenv("PORT", 3000), reload=True)

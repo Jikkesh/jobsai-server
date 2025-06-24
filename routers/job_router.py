@@ -10,7 +10,7 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 def get_image_url(job: Job, request: Request) -> str:
     if job.image:
-        return f"{request.base_url}images/{job.company_name}.jpg"
+        return f"{request.base_url}images/{job.image}"
     return ""
 
 def job_to_response(job: Job, request: Request) -> JobResponse:
@@ -39,7 +39,7 @@ def get_top_jobs(request: Request, db: Session = Depends(get_db)):
     jobs_by_category = {}
 
     for category in categories:
-        jobs = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc()).limit(6).all()
+        jobs = db.query(Job).filter(Job.category == category).order_by(Job.posted_on.desc()).limit(6).all()
         job_responses = [job_to_response(job, request) for job in jobs]
         jobs_by_category[category.lower()] = [
             CategoryResponse(category=category, jobs_data=job_responses)
@@ -58,7 +58,7 @@ def get_jobs_by_category(
     """
     Retrieve paginated jobs for a given category.
     """
-    query = db.query(Job).filter(Job.category == category).order_by(Job.created_at.desc())
+    query = db.query(Job).filter(Job.category == category).order_by(Job.posted_on.desc())
     total_count = query.count()
     jobs = query.offset((page - 1) * page_size).limit(page_size).all()
     
@@ -85,7 +85,7 @@ def get_jobs(request: Request, db: Session = Depends(get_db)):
     """
     Retrieve all jobs from the database.
     """
-    jobs = db.query(Job).order_by(Job.created_at.asc()).all()
+    jobs = db.query(Job).order_by(Job.posted_on.asc()).all()
     return [job_to_response(job, request) for job in jobs]
 
 @router.put("/{job_id}", response_model=JobOut)
