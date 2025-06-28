@@ -73,4 +73,10 @@ def startup_event():
     sched.start()
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="localhost", port=os.getenv("PORT", 3000), reload=True)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 3000)),
+        reload=False,
+        workers=4
+    )
