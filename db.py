@@ -6,16 +6,10 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 load_dotenv()
 
-# Get environment variables
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_HOSTNAME = os.getenv("POSTGRES_HOSTNAME")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+CONNECTION_STRING = os.getenv("DATABASE_URL_TEST")
 
 # Construct the database URL
-# DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOSTNAME}:{POSTGRES_PORT}/{POSTGRES_DB}"
-DATABASE_URL = "postgresql://postgres:admin@localhost:5432/JobsAI"
+DATABASE_URL = f"{CONNECTION_STRING}"
 if DATABASE_URL is None:
     raise ValueError("DATABASE_URL environment variable not set")
 
