@@ -62,11 +62,11 @@ sched = AsyncIOScheduler(timezone="Asia/Kolkata")
 @app.on_event("startup")
 def startup_event():
 
-    # Schedule daily cleanup @ 21:30 IST
+    # Schedule daily cleanup @ 02:30 IST
     india_tz = pytz.timezone("Asia/Kolkata")
     sched.add_job(
         daily_job_main,
-        CronTrigger(hour=21, minute=10, timezone=india_tz),
+        CronTrigger(hour=2, minute=30, timezone=india_tz),
         id="daily_job",
         replace_existing=True,  
     )
