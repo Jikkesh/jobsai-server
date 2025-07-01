@@ -66,12 +66,12 @@ def startup_event():
     india_tz = pytz.timezone("Asia/Kolkata")
     sched.add_job(
         daily_job_main,
-        CronTrigger(hour=20, minute=17, timezone=india_tz),
+        CronTrigger(hour=21, minute=10, timezone=india_tz),
         id="daily_job",
         replace_existing=True,  
     )
     sched.start()
-
+    
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
