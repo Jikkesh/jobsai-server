@@ -76,8 +76,8 @@ class JobScrapingOrchestrator:
     def load_existing_images(self):
         """Load list of existing company images"""
         for filename in self.images_dir.iterdir():
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                company_name = filename.rsplit('.', 1)[0].replace('_', '/')
+            if filename.name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                company_name = filename.name.rsplit('.', 1)[0].replace('_', '/')
                 self.existing_images.add(company_name.lower())
         print(f"🖼️ Found {len(self.existing_images)} existing company images")
 

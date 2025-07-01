@@ -32,7 +32,7 @@ app.include_router(job_router.router)
 app.include_router(user_router.router)
 
 #Greetings
-app.get("/")
+@app.get("")
 async def root():
     return {"message": "Hello World"}
 
@@ -66,7 +66,7 @@ def startup_event():
     india_tz = pytz.timezone("Asia/Kolkata")
     sched.add_job(
         daily_job_main,
-        CronTrigger(hour=20, minute=25, timezone=india_tz),
+        CronTrigger(hour=20, minute=17, timezone=india_tz),
         id="daily_job",
         replace_existing=True,  
     )
@@ -78,5 +78,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=int(os.getenv("PORT", 3000)),
         reload=False,
-        workers=4
     )
