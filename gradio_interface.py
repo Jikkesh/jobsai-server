@@ -4,7 +4,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 from datetime import datetime
-from ai_job_helper import generate_job_details
+from ai_job_helper import generate_ai_enhanced_content
 from sqlalchemy.orm import Session
 from models import Job
 from db import SessionLocal
@@ -284,13 +284,13 @@ def process_job_submission(
             db.close()
         return f"❌ Error saving job data: {str(e)}"
 
-def generate_and_state(job_details):
+def generate_and_state(job_details, company_name, job_role):
     """Generate AI previews and update progress bar"""
     if not job_details or len(job_details.strip()) < 50:
         empty = ""
         return ("Please enter more detailed job information.",) + (empty,) * 9
 
-    result = generate_job_details(job_details)
+    result = generate_ai_enhanced_content(job_details, company_name, job_role)
 
     return (
         result["job_description"],
@@ -387,7 +387,7 @@ def create_interface():
         preview_btn = gr.Button("🤖 Generate Content using AI", variant="secondary")
         preview_btn.click(
             fn=generate_and_state,
-            inputs=[job_details],
+            inputs=[job_details, company_name, job_role],
             outputs=[
                 job_desc_preview, resp_preview, company_preview,
                 process_preview, qual_preview,

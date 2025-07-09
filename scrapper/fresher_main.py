@@ -582,8 +582,8 @@ class JobScrapingOrchestrator:
             job_description = job.get('job_information', 'No job description available')
             
             # Generate AI-enhanced content
-            ai_content = generate_ai_enhanced_content(job_description)
-            
+            ai_content = generate_ai_enhanced_content(job_description, job.get('company_name', 'Unknown'), job.get('job_role', 'Unknown'), job.get('qualifications', 'Unknown'))
+
             # Fetch company image with duplicate check
             image_path = self.get_company_image(job.get('company_name', ''))
             

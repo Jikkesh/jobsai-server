@@ -589,9 +589,12 @@ class JobScrapingOrchestrator:
             # Prepare job description for AI
             job_description = job.get('job_information', 'No job description available')
             
+            print(f"  📝 Job Description Length: {len(job_description)} characters")
+            print(f"  🏢 Company: {job.get('company_name', 'Unknown')}")
+            print(f"  📋 Job Role: {job.get('job_role', 'Unknown')}")
             # Generate AI-enhanced content
-            ai_content = generate_ai_enhanced_content(job_description)
-            
+            ai_content = generate_ai_enhanced_content(job_description, job.get('company_name', 'Unknown'), job.get('job_role', 'Unknown'), job.get('qualifications', 'Unknown'))
+
             # Fetch company image with duplicate check
             image_path = self.get_company_image(job.get('company_name', ''))
             
