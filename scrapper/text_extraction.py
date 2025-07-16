@@ -135,7 +135,7 @@ def call_groq_api(prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -
         return f"Error generating content: {str(e)}"
 
 
-def generate_ai_enhanced_content(job_description: str, company_name: str, job_title: str) -> Dict[str, str]:
+def generate_ai_enhanced_content(job_description: str, company_name: str, job_title: str, qualifications: str) -> Dict[str, str]:
     """Process a job description through GROQ AI to generate structured sections"""
     
     results = {}
@@ -144,7 +144,7 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
         print(f"  🤖 Generating {topic}...")
         
         # Construct dynamic prompt for each topic
-        dynamic_prompt = construct_prompt(topic, job_description, company_name, job_title)
+        dynamic_prompt = construct_prompt(topic, job_description, company_name, job_title, qualifications)
         
         # Generate content using the dynamic prompt
         results[topic] = call_groq_api(dynamic_prompt, system_prompt)
