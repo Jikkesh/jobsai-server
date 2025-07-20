@@ -300,8 +300,8 @@
                     <textarea id="edit_job_description" rows="10"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="edit_key_responsibilty">Key Responsibility</label>
-                    <textarea id="edit_key_responsibilty" rows="10"></textarea>
+                    <label for="edit_key_responsibility">Key Responsibility</label>
+                    <textarea id="edit_key_responsibility" rows="10"></textarea>
                 </div>
                 <div class="form-group">
                     <label for="edit_about_company">About Company</label>
@@ -439,15 +439,15 @@
                     } else {
                         editorEditJobDescription.setData(job.job_description);
                     }
-                    if (!editorEditKeyResponsibilty) {
-                        ClassicEditor.create(document.querySelector('#edit_key_responsibilty'))
+                    if (!editorEditKeyResponsibility) {
+                        ClassicEditor.create(document.querySelector('#edit_key_responsibility'))
                             .then(editor => {
-                                editorEditKeyResponsibilty = editor;
-                                editorEditKeyResponsibilty.setData(job.key_responsibilty);
+                                editorEditKeyResponsibility = editor;
+                                editorEditKeyResponsibility.setData(job.key_responsibility);
                             })
                             .catch(error => console.error(error));
                     } else {
-                        editorEditKeyResponsibilty.setData(job.key_responsibilty);
+                        editorEditKeyResponsibility.setData(job.key_responsibility);
                     }
                     if (!editorEditAboutCompany) {
                         ClassicEditor.create(document.querySelector('#edit_about_company'))
@@ -502,7 +502,7 @@
             formData.append("batch", $("#edit_batch").val());
             formData.append("salary_package", $("#edit_salary_package").val());
             formData.append("job_description", editorEditJobDescription ? editorEditJobDescription.getData() : "");
-            formData.append("key_responsibilty", editorEditKeyResponsibilty ? editorEditKeyResponsibilty.getData() : "");
+            formData.append("key_responsibility", editorEditKeyResponsibility ? editorEditKeyResponsibility.getData() : "");
             formData.append("about_company", editorEditAboutCompany ? editorEditAboutCompany.getData() : "");
             formData.append("selection_process", editorEditSelectionProcess ? editorEditSelectionProcess.getData() : "");
 

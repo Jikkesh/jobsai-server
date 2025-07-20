@@ -27,7 +27,7 @@ class JobScrapingOrchestrator:
         self.jobs_data = []
         self.detailed_jobs_data = []
         self.failed_links = []
-        self.two_months_ago = datetime.now() - timedelta(days=100)  # 100 days back
+        self.two_months_ago = datetime.now() - timedelta(days=3)  # 100 days back
         self.existing_jobs = set()  # Store existing job signatures
         self.existing_images = set()  # Store existing company images
         
@@ -163,11 +163,13 @@ class JobScrapingOrchestrator:
             return image_filename
 
         except requests.RequestException as e:
-            print(f"  ❌ Failed to fetch logo for {company_name}: {e}")
-            return ""
+            print(f"  ❌ Failed to fetch logo for {company_name}: {e} - using default image")
+            image_filename = 'hiring.png'  # Default image if logo fetch fails
+            return image_filename
         except Exception as e:
-            print(f"  ❌ Error processing logo for {company_name}: {e}")
-            return ""
+            print(f"  ❌ Error processing logo for {company_name}: {e} - using default image")
+            image_filename = 'hiring.png'
+            return image_filename
 
 
     # ==================== BASIC JOB LISTING SCRAPER ====================
@@ -610,7 +612,7 @@ class JobScrapingOrchestrator:
                 'batch': job.get('batch', 'Not specified'),
                 'salary_package': job.get('salary_package', 'Not specified'),
                 'job_description': ai_content.get('job_description', job_description),
-                'key_responsibilty': ai_content.get('key_responsibilities', 'Not specified'),
+                'key_responsibility': ai_content.get('key_responsibility', 'Not specified'),
                 'about_company': ai_content.get('about_company', 'Not specified'),
                 'selection_process': ai_content.get('selection_process', 'Not specified'),
                 'image': image_path,
@@ -621,7 +623,7 @@ class JobScrapingOrchestrator:
             print(f"  ✅ Enhanced successfully")
             
             # Rate limiting
-            time.sleep(2)
+            time.sleep(5)
         
         self.enhanced_jobs_data = enhanced_jobs
         print(f"\n✅ STEP 3 COMPLETED: {len(enhanced_jobs)} jobs enhanced")
@@ -641,7 +643,7 @@ class JobScrapingOrchestrator:
             fieldnames = [
                 'company_name', 'job_role', 'website_link', 'state', 'city',
                 'experience', 'qualification', 'batch', 'salary_package',
-                'job_description', 'key_responsibilty', 'about_company',
+                'job_description', 'key_responsibility', 'about_company',
                 'selection_process', 'image', 'posted_on'
             ]
             

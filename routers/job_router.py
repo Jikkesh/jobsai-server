@@ -103,7 +103,7 @@ async def update_job(
     batch: str = Form(None),
     salary_package: str = Form(None),
     job_description: str = Form(...),
-    key_responsibilty: str = Form(None),
+    key_responsibility: str = Form(None),
     about_company: str = Form(None),
     selection_process: str = Form(None),
     db: Session = Depends(get_db),
@@ -127,7 +127,7 @@ async def update_job(
     db_job.batch = batch  # type: ignore
     db_job.salary_package = salary_package  # type: ignore
     db_job.job_description = job_description  # type: ignore
-    db_job.key_responsibilty = key_responsibilty  # type: ignore
+    db_job.key_responsibility = key_responsibility  # type: ignore
     db_job.about_company = about_company  # type: ignore
     db_job.selection_process = selection_process  # type: ignore
 

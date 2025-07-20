@@ -225,7 +225,7 @@ def process_job_submission(
 
         # Use the previewed/generated content
         job_description = str(job_desc_preview) if job_desc_preview else ""
-        key_responsibilities = str(resp_preview) if resp_preview else ""
+        key_responsibility = str(resp_preview) if resp_preview else ""
         about_company = str(company_preview) if company_preview else ""
         selection_process = str(process_preview) if process_preview else ""
         qualification_details = str(qual_preview) if qual_preview else ""
@@ -266,7 +266,7 @@ def process_job_submission(
             batch=str(batch) if batch else "",
             salary_package=str(salary_package).strip(),
             job_description=job_description,
-            key_responsibilty=key_responsibilities,
+            key_responsibility=key_responsibility,
             about_company=about_company,
             selection_process=selection_process,
             image=image_filename,
@@ -294,13 +294,13 @@ def generate_and_state(job_details, company_name, job_role):
 
     return (
         result["job_description"],
-        result["key_responsibilities"],
+        result["key_responsibility"],
         result["about_company"],
         result["selection_process"],
         result["qualification"],
         # states
         result["job_description"],
-        result["key_responsibilities"],
+        result["key_responsibility"],
         result["about_company"],
         result["selection_process"],
         result["qualification"]

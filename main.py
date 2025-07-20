@@ -61,6 +61,8 @@ sched = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 @app.on_event("startup")
 def startup_event():
+    #Run the pipeline
+    daily_job_main()
 
     # Schedule daily cleanup @ 02:30 IST
     india_tz = pytz.timezone("Asia/Kolkata")

@@ -18,7 +18,7 @@ class Job(Base):
     batch = Column(String, nullable=True)
     salary_package = Column(String, nullable=True)
     job_description = Column(Text, nullable=False)
-    key_responsibilty = Column(Text, nullable=True)
+    key_responsibility = Column(Text, nullable=True)
     about_company = Column(Text, nullable=True)
     selection_process = Column(Text, nullable=True)
     image = Column(String, nullable=True)

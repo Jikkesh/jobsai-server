@@ -11,6 +11,8 @@ from db import SessionLocal
 from scrapper.intern_main import main as scrape_intern_jobs
 from scrapper.fresher_main import main as scrape_fresher_jobs
 from scrapper.import_script import main as import_jobs_from_csv
+from services.import_script import main as import_remote_jobs_from_csv
+from services.remote_jobs import RemoteJobGenerator
 
 # Configure logging with UTF-8 console output
 utf8_console = logging.StreamHandler(
@@ -29,6 +31,7 @@ class DailyJob:
     def __init__(self):
         self.session = SessionLocal()
         self.logger = logging.getLogger(__name__)
+        self.remote_jobs = RemoteJobGenerator()
 
     def cleanup_expired_jobs(self, days_threshold: int = 100):
         """
@@ -69,28 +72,51 @@ class DailyJob:
         Remove rows from each CSV whose `posted_on` is older than cutoff_date.
         """
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
+        
         for path in csv_paths:
+            # Check if file exists before processing
+            if not os.path.exists(path):
+                self.logger.warning(f"CSV file not found: {path}")
+                continue
+                
             kept_rows = []
             removed = 0
 
-            with open(path, newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                fieldnames = reader.fieldnames or []
-                for row in reader:
-                    posted = date_parser.isoparse(row['posted_on'])
-                    if posted >= cutoff_date:
-                        kept_rows.append(row)
-                    else:
-                        removed += 1
+            try:
+                with open(path, newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    fieldnames = reader.fieldnames or []
+                    
+                    for row in reader:
+                        try:
+                            posted = date_parser.isoparse(row['posted_on'])
+                            
+                            # Make posted datetime timezone-aware if it's naive
+                            if posted.tzinfo is None:
+                                posted = posted.replace(tzinfo=timezone.utc)
+                            
+                            if posted >= cutoff_date:
+                                kept_rows.append(row)
+                            else:
+                                removed += 1
+                                
+                        except (ValueError, KeyError) as e:
+                            self.logger.warning(f"Skipping invalid row in {path}: {e}")
+                            # Keep the row if we can't parse the date
+                            kept_rows.append(row)
 
-            if removed > 0:
-                self.logger.info(f"Removing {removed} row(s) from CSV: {path}")
-                with open(path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(kept_rows)
-            else:
-                self.logger.info(f"No rows to remove from CSV: {path}")
+                if removed > 0:
+                    self.logger.info(f"Removing {removed} row(s) from CSV: {path}")
+                    with open(path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        writer.writerows(kept_rows)
+                else:
+                    self.logger.info(f"No rows to remove from CSV: {path}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing CSV file {path}: {e}")
+                continue
 
     def get_job_statistics(self):
         """Log total count, counts by category, and min/max dates."""
@@ -124,6 +150,7 @@ class DailyJob:
             csv_files = [
             base_dir / "scrapper" / "freshers_final.csv",
             base_dir / "scrapper" / "internships_final.csv",
+            base_dir / "services" / "temp" / "remote_jobs.csv",
         ]
             self.cleanup_csv_files(csv_files, days_threshold)
 
@@ -142,6 +169,8 @@ class DailyJob:
             scrape_fresher_jobs()
             self.logger.info("-> Scraping intern jobs…")
             scrape_intern_jobs()
+            self.logger.info("-> Scraping remote jobs…")
+            self.remote_jobs.run_all()
             self.logger.info("Job scraping completed successfully.")
         except Exception:
             self.logger.exception("Job scraping failed.")
@@ -153,6 +182,7 @@ class DailyJob:
         self.logger.info("Loading CSV files and importing jobs into DB…")
         try:
             import_jobs_from_csv()
+            import_remote_jobs_from_csv()
             self.logger.info("CSV import completed successfully.")
         except Exception:
             self.logger.exception("CSV import failed.")

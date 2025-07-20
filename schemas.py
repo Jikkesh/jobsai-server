@@ -19,7 +19,7 @@ class JobBase(BaseModel):
     batch: Optional[str] = None
     salary_package: Optional[str] = None
     job_description: str
-    key_responsibilty: Optional[str] = None
+    key_responsibility: Optional[str] = None
     about_company: Optional[str] = None
     selection_process: Optional[str] = None
     image: Optional[bytes] = None
@@ -43,7 +43,7 @@ class JobResponse(BaseModel):
     batch: str
     salary_package: str
     job_description: str
-    key_responsibilty: str
+    key_responsibility: str
     about_company: str
     selection_process: str
     image_url: Optional[str] = None
@@ -66,7 +66,7 @@ class JobUpdate(BaseModel):
     batch: Optional[str] = None
     salary_package: Optional[str] = None
     job_description: Optional[str] = None
-    key_responsibilty: Optional[str] = None
+    key_responsibility: Optional[str] = None
     about_company: Optional[str] = None
     selection_process: Optional[str] = None
     image: Optional[bytes] = None

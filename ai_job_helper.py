@@ -18,7 +18,7 @@ SYSTEM_PROMPTS = {
         "Generate the content in HTML format with proper formatting."
     ),
 
-    "key_responsibilities": (
+    "key_responsibility": (
         "You are an expert HR advisor specializing in job responsibilities. "
         "Extract and structure the key responsibilities based ONLY on the information provided. "
         "Do not invent or assume responsibilities not mentioned. "
@@ -73,7 +73,7 @@ Job Description Information:
 
 Task: Create a comprehensive job description that highlights the role, requirements, qualifications, and benefits based on the provided information. Focus on making it attractive to potential candidates while being accurate to the source material."""
 
-    elif topic == "key_responsibilities":
+    elif topic == "key_responsibility":
         return f"""{base_info}
 Job Description Information:
 {job_description}

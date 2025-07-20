@@ -16,7 +16,7 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # Rate limiting configuration
 RATE_LIMIT_CONFIG = {
-    'base_delay': 2,      # Base delay between requests (seconds)
+    'base_delay': 5,      # Base delay between requests (seconds)
     'max_retries': 5,      # Maximum number of retries
     'backoff_factor': 2,   # Exponential backoff multiplier
     'jitter_range': (1, 3) # Random jitter to avoid thundering herd
