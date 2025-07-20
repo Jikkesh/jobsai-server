@@ -27,7 +27,7 @@ class JobScrapingOrchestrator:
         self.jobs_data = []
         self.detailed_jobs_data = []
         self.failed_links = []
-        self.two_months_ago = datetime.now() - timedelta(days=3)  # 100 days back
+        self.two_months_ago = datetime.now() - timedelta(days=60)  # 60 days back
         self.existing_jobs = set()  # Store existing job signatures
         self.existing_images = set()  # Store existing company images
         

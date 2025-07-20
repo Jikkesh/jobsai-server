@@ -29,7 +29,7 @@ class RemoteJobGenerator:
         job_category: str = "Remote",
         images_dir: Path = ROOT_DIR / "uploaded_images",
         csv_path: Path = ROOT_DIR / "services" / "temp" / "remote_jobs.csv",
-        max_age_days: int = 2
+        max_age_days: int = 30
     ):
         self.job_category = job_category
         self.images_dir = images_dir
