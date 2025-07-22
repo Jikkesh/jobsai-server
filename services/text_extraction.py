@@ -281,7 +281,6 @@ def call_groq_api(prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -
         ],
         "top_p": 0.95,
         "temperature": 0.1,
-        "max_tokens": 1000
     }
     
     print(f"🌐 API call to GROQ (estimated {estimate_tokens(prompt)} tokens)...")
@@ -382,8 +381,8 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
     sections = list(SYSTEM_PROMPTS.items())
     
     # Extended delays between sections
-    inter_section_delay = (30, 60)  # 30-60 seconds between sections
-    
+    inter_section_delay = 30  # 30 seconds between sections
+
     for i, (topic, system_prompt) in enumerate(sections, 1):
         print(f"\n📝 Generating {topic.replace('_', ' ').title()} ({i}/{len(sections)})...")
         print(f"Current server status before generation:")
@@ -391,12 +390,23 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
         
         try:
             # Construct prompt
-            prompt = f"Company: {company_name}\nJob Title: {job_title}\nDescription: {job_description}\nQualifications: {qualifications}\n\nTask: Create {topic.replace('_', ' ')} content."
-            
+            prompt = f"""Company: {company_name}\n
+            Job Title: {job_title}\n
+            Description: {job_description}\n
+            Qualifications: {qualifications}\n\n
+            Task: Create {topic.replace('_', ' ')} content."""
+
             # Generate content with enhanced rate limiting
             raw_content = call_groq_api(prompt, system_prompt)
             results[topic] = markdown_to_html(raw_content)
             
+            #Check for 400 errors and retry if necessary
+            if results[topic] == "<p>Error generating content: 400 Client Error: Bad Request for url: https://api.groq.com/openai/v1/chat/completions</p>":
+                print(f"❌ {topic} failed with 400 error, retrying...")
+                time.sleep(5)  # Short delay before retry
+                raw_content = call_groq_api(prompt, system_prompt)
+                results[topic] = markdown_to_html(raw_content)
+                
             print(f"✅ {topic} completed successfully")
             
             # Extended delay between sections within the same job
@@ -484,8 +494,7 @@ def save_rate_limit_state():
         json.dump(state, f)
 
 def load_rate_limit_state():
-    """Load comprehensive rate limit state including server data"""
-    global rate_tracker
+    """Load comprehensive rate limit state with server data"""
     try:
         with open('rate_limit_state.json', 'r') as f:
             state = json.load(f)
@@ -510,54 +519,3 @@ def load_rate_limit_state():
             
     except FileNotFoundError:
         pass  # Fresh start
-
-# Example usage
-if __name__ == "__main__":
-    # Load previous state
-    load_rate_limit_state()
-    
-    print("🛡️ ENHANCED GROQ API WITH COMPLETE JOB CONTENT GENERATION")
-    display_comprehensive_limits()
-    
-    # Example single job
-    job_data = {
-        "job_description": "Sales Development Representative role focusing on mental health professionals",
-        "company_name": "Heard",
-        "job_title": "Sales Development Representative",
-        "qualifications": "Bachelor's degree, 1-2 years sales experience"
-    }
-    
-    print("\n🔥 GENERATING SINGLE JOB CONTENT:")
-    content = generate_ai_enhanced_content(**job_data)
-    
-    print("\n📋 Generated Content Preview:")
-    for section, text in content.items():
-        print(f"\n{section.upper()}:")
-        print(f"{text[:100]}..." if len(text) > 100 else text)
-    
-    # Example batch processing
-    print("\n\n🔥 EXAMPLE BATCH PROCESSING:")
-    batch_jobs = [
-        {
-            "job_description": "Frontend developer for e-commerce platform",
-            "company_name": "TechCorp",
-            "job_title": "Senior Frontend Developer",
-            "qualifications": "5+ years React experience, TypeScript"
-        },
-        {
-            "job_description": "Backend API development and database management",
-            "company_name": "DataFlow Inc",
-            "job_title": "Backend Engineer",
-            "qualifications": "Python, FastAPI, PostgreSQL experience"
-        }
-    ]
-    
-    # Uncomment to test batch processing
-    # enhanced_batch = safe_batch_generate(batch_jobs, (90, 150))  # Longer delays for safety
-    # print(f"\n✅ Batch processing completed: {len(enhanced_batch)} jobs processed")
-    
-    # Save final state
-    save_rate_limit_state()
-    
-    print("\n🎉 Complete job content generation system ready!")
-    display_comprehensive_limits()

@@ -397,6 +397,12 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
             raw_content = call_groq_api(prompt, system_prompt)
             results[topic] = markdown_to_html(raw_content)
             
+            if results[topic] == "<p>Error generating content: 400 Client Error: Bad Request for url: https://api.groq.com/openai/v1/chat/completions</p>":
+                print(f"❌ {topic} failed with 400 error, retrying...")
+                time.sleep(5)  # Short delay before retry
+                raw_content = call_groq_api(prompt, system_prompt)
+                results[topic] = markdown_to_html(raw_content)
+            
             print(f"✅ {topic} completed successfully")
             
             # Extended delay between sections within the same job

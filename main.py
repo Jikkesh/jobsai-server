@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from gradio_interface import create_interface
 from daily_job import main as daily_job_main
+from clean_errors import main as clean_errors_main
 import gradio as gr
 
 # Initialize FastAPI app
@@ -61,6 +62,9 @@ sched = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 @app.on_event("startup")
 def startup_event():
+    #Remove error entry
+    clean_errors_main()
+    
     #Run the pipeline
     daily_job_main()
 
