@@ -1,280 +1,278 @@
 import os
 import time
 import re
-from typing import Dict
+from typing import Dict, Optional, Tuple
 import requests
 import markdown
-import mistune
 from dotenv import load_dotenv
 import random
 from functools import wraps
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import json
 
 load_dotenv()
 
 DEFAULT_MODEL = "gemma2-9b-it"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Rate limiting configuration
-RATE_LIMIT_CONFIG = {
-    'base_delay': 5,      # Base delay between requests (seconds)
-    'max_retries': 5,      # Maximum number of retries
-    'backoff_factor': 2,   # Exponential backoff multiplier
-    'jitter_range': (1, 3) # Random jitter to avoid thundering herd
-}
+@dataclass
+class RateLimitTracker:
+    """Track API usage to respect Groq limits"""
+    requests_per_minute: int = 0
+    requests_per_day: int = 0
+    tokens_per_minute: int = 0
+    tokens_per_day: int = 0
+    minute_window_start: datetime = None
+    day_window_start: datetime = None
+    
+    # Server-reported limits (updated from headers)
+    server_rpm_limit: Optional[int] = None
+    server_rpd_limit: Optional[int] = None
+    server_tpm_limit: Optional[int] = None
+    server_tpd_limit: Optional[int] = None
+    
+    # Server-reported remaining (updated from headers)
+    server_remaining_requests: Optional[int] = None
+    server_remaining_tokens: Optional[int] = None
+    
+    # Conservative fallback limits
+    MAX_RPM: int = 30
+    MAX_RPD: int = 500
+    MAX_TPM: int = 15000
+    MAX_TPD: int = 100000
 
-def rate_limited_retry(func):
-    """Decorator to handle rate limiting with exponential backoff and jitter"""
+# Global rate limit tracker
+rate_tracker = RateLimitTracker()
+
+def parse_rate_limit_headers(response) -> Dict[str, Optional[int]]:
+    """
+    Parse all possible Groq rate limit headers
+    Different APIs use different header names
+    """
+    headers = response.headers
+    parsed = {}
+    
+    # Common rate limit header patterns
+    header_patterns = {
+        'requests_remaining': [
+            'x-ratelimit-remaining-requests',
+            'x-ratelimit-remaining',
+            'ratelimit-remaining',
+            'x-rate-limit-remaining'
+        ],
+        'tokens_remaining': [
+            'x-ratelimit-remaining-tokens', 
+            'x-ratelimit-remaining-input-tokens',
+            'x-ratelimit-remaining-output-tokens'
+        ],
+        'requests_limit': [
+            'x-ratelimit-limit-requests',
+            'x-ratelimit-limit',
+            'ratelimit-limit'
+        ],
+        'tokens_limit': [
+            'x-ratelimit-limit-tokens',
+            'x-ratelimit-limit-input-tokens', 
+            'x-ratelimit-limit-output-tokens'
+        ],
+        'reset_time': [
+            'x-ratelimit-reset-requests',
+            'x-ratelimit-reset-tokens',
+            'x-ratelimit-reset',
+            'ratelimit-reset'
+        ],
+        'retry_after': [
+            'retry-after'
+        ]
+    }
+    
+    for category, header_names in header_patterns.items():
+        for header_name in header_names:
+            if header_name.lower() in [h.lower() for h in headers.keys()]:
+                try:
+                    # Find the actual header with correct case
+                    actual_header = next(h for h in headers.keys() 
+                                       if h.lower() == header_name.lower())
+                    parsed[category] = int(headers[actual_header])
+                    break
+                except (ValueError, StopIteration):
+                    continue
+        
+        if category not in parsed:
+            parsed[category] = None
+    
+    return parsed
+
+def update_from_server_headers(response):
+    """Update rate limit tracker with server-reported values"""
+    global rate_tracker
+    
+    headers_data = parse_rate_limit_headers(response)
+    
+    # Update server limits if provided
+    if headers_data['requests_limit']:
+        rate_tracker.server_rpm_limit = headers_data['requests_limit']
+    if headers_data['tokens_limit']:
+        rate_tracker.server_tpm_limit = headers_data['tokens_limit']
+    
+    # Update remaining counts
+    if headers_data['requests_remaining'] is not None:
+        rate_tracker.server_remaining_requests = headers_data['requests_remaining']
+    if headers_data['tokens_remaining'] is not None:
+        rate_tracker.server_remaining_tokens = headers_data['tokens_remaining']
+    
+    # Log comprehensive rate limit info
+    print(f"\n📊 RATE LIMIT STATUS FROM SERVER:")
+    print(f"  🔢 Remaining Requests: {headers_data['requests_remaining'] or 'Unknown'}")
+    print(f"  🎯 Remaining Tokens: {headers_data['tokens_remaining'] or 'Unknown'}")
+    print(f"  📝 Request Limit: {headers_data['requests_limit'] or 'Unknown'}")
+    print(f"  📊 Token Limit: {headers_data['tokens_limit'] or 'Unknown'}")
+    
+    if headers_data['reset_time']:
+        reset_datetime = datetime.fromtimestamp(headers_data['reset_time'])
+        print(f"  🔄 Resets at: {reset_datetime.strftime('%H:%M:%S')}")
+    
+    if headers_data['retry_after']:
+        print(f"  ⏳ Retry after: {headers_data['retry_after']} seconds")
+
+def get_effective_limits() -> Tuple[int, int, int, int]:
+    """
+    Get effective rate limits, preferring server-reported values
+    Returns: (rpm, rpd, tpm, tpd)
+    """
+    global rate_tracker
+    
+    # Use server limits if available, otherwise fallback to conservative defaults
+    effective_rpm = rate_tracker.server_rpm_limit or rate_tracker.MAX_RPM
+    effective_rpd = rate_tracker.server_rpd_limit or rate_tracker.MAX_RPD
+    effective_tpm = rate_tracker.server_tpm_limit or rate_tracker.MAX_TPM
+    effective_tpd = rate_tracker.server_tpd_limit or rate_tracker.MAX_TPD
+    
+    return effective_rpm, effective_rpd, effective_tpm, effective_tpd
+
+def smart_rate_limit_check(estimated_tokens: int = 1000) -> Optional[float]:
+    """
+    Intelligent rate limit checking using both local tracking and server data
+    """
+    global rate_tracker
+    reset_windows_if_needed()
+    
+    effective_rpm, effective_rpd, effective_tpm, effective_tpd = get_effective_limits()
+    delays = []
+    
+    # If we have server-reported remaining counts, use those for more accurate checks
+    if rate_tracker.server_remaining_requests is not None:
+        if rate_tracker.server_remaining_requests <= 0:
+            print("⚠️ Server reports no remaining requests!")
+            delays.append(60)  # Wait a minute
+    else:
+        # Fallback to local tracking
+        if rate_tracker.requests_per_minute >= effective_rpm:
+            time_until_reset = 60 - (datetime.now() - rate_tracker.minute_window_start).seconds
+            delays.append(time_until_reset)
+    
+    if rate_tracker.server_remaining_tokens is not None:
+        if rate_tracker.server_remaining_tokens < estimated_tokens:
+            print(f"⚠️ Server reports insufficient tokens! Need: {estimated_tokens}, Have: {rate_tracker.server_remaining_tokens}")
+            delays.append(60)
+    else:
+        # Fallback to local tracking
+        if rate_tracker.tokens_per_minute + estimated_tokens > effective_tpm:
+            time_until_reset = 60 - (datetime.now() - rate_tracker.minute_window_start).seconds
+            delays.append(time_until_reset)
+    
+    # Check daily limits (usually only local tracking available)
+    if rate_tracker.requests_per_day >= effective_rpd:
+        time_until_reset = 86400 - (datetime.now() - rate_tracker.day_window_start).seconds
+        delays.append(time_until_reset)
+    
+    if rate_tracker.tokens_per_day + estimated_tokens > effective_tpd:
+        time_until_reset = 86400 - (datetime.now() - rate_tracker.day_window_start).seconds
+        delays.append(time_until_reset)
+    
+    return max(delays) if delays else None
+
+def reset_windows_if_needed():
+    """Reset rate limit windows if time has passed"""
+    global rate_tracker
+    now = datetime.now()
+    
+    # Reset minute window
+    if (rate_tracker.minute_window_start is None or 
+        now - rate_tracker.minute_window_start >= timedelta(minutes=1)):
+        rate_tracker.requests_per_minute = 0
+        rate_tracker.tokens_per_minute = 0
+        rate_tracker.minute_window_start = now
+    
+    # Reset day window
+    if (rate_tracker.day_window_start is None or 
+        now - rate_tracker.day_window_start >= timedelta(days=1)):
+        rate_tracker.requests_per_day = 0
+        rate_tracker.tokens_per_day = 0
+        rate_tracker.day_window_start = now
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimation (1 token ≈ 4 characters for English)"""
+    return len(text) // 4 + 100
+
+def advanced_rate_limiter(func):
+    """Advanced decorator with server header integration"""
     @wraps(func)
     def wrapper(*args, **kwargs):
-        config = RATE_LIMIT_CONFIG
-        last_exception = None
+        max_retries = 3
+        base_delay = 15
         
-        for attempt in range(config['max_retries']):
+        for attempt in range(max_retries):
             try:
-                # Add base delay before each attempt (except first)
-                if attempt > 0:
-                    # Calculate exponential backoff with jitter
-                    delay = config['base_delay'] * (config['backoff_factor'] ** (attempt - 1))
-                    jitter = random.uniform(*config['jitter_range'])
-                    total_delay = delay + jitter
-                    
-                    print(f"🔄 Rate limited. Waiting {total_delay:.1f}s before retry {attempt}/{config['max_retries']-1}...")
-                    time.sleep(total_delay)
+                # Pre-flight check with server data integration
+                prompt_text = kwargs.get('prompt', args[0] if args else '')
+                estimated_tokens = estimate_tokens(prompt_text)
                 
-                return func(*args, **kwargs)
+                required_delay = smart_rate_limit_check(estimated_tokens)
+                # if required_delay:
+                #     print(f"🚦 Rate limit protection: waiting {required_delay:.1f}s...")
+                #     time.sleep(required_delay + random.uniform(2, 8))
+                
+                # Make the API call
+                result = func(*args, **kwargs)
+                return result
                 
             except requests.exceptions.HTTPError as e:
-                last_exception = e
                 if e.response.status_code == 429:
-                    print(f"⚠️  Rate limit hit (attempt {attempt + 1}/{config['max_retries']})")
+                    # Parse headers for precise retry information
+                    headers_data = parse_rate_limit_headers(e.response)
                     
-                    # Check if response has Retry-After header
-                    retry_after = e.response.headers.get('Retry-After')
-                    if retry_after and attempt < config['max_retries'] - 1:
-                        wait_time = int(retry_after) + random.uniform(1, 3)
-                        print(f"🕐 Server requested {retry_after}s wait. Waiting {wait_time:.1f}s...")
-                        time.sleep(wait_time)
+                    if headers_data['retry_after']:
+                        wait_time = headers_data['retry_after'] + random.uniform(5, 15)
+                        print(f"🔄 429 Error: Server requests {headers_data['retry_after']}s wait, using {wait_time:.1f}s")
+                    else:
+                        wait_time = base_delay * (2 ** attempt) + random.uniform(10, 30)
+                        print(f"🔄 429 Error: Exponential backoff {wait_time:.1f}s")
+                    
+                    time.sleep(wait_time)
                     continue
                 else:
-                    # For non-rate-limit errors, re-raise immediately
                     raise e
             except Exception as e:
-                # For other exceptions, re-raise immediately
                 raise e
         
-        # If all retries exhausted, raise the last exception
-        print(f"❌ All {config['max_retries']} attempts failed due to rate limiting")
-        raise last_exception
+        raise Exception(f"Failed after {max_retries} attempts due to rate limiting")
     
     return wrapper
 
-
-SYSTEM_PROMPTS = {
-    "job_description": (
-        "You are an AI Agent specializing in writing comprehensive job descriptions for job portals. "
-        "Generate a detailed, thorough job description based on the provided information up to 200 words long. "
-        "If some details are missing, supplement extensively with relevant industry-standard information. "
-        "Structure your response with multiple clear headings and well-organized sections."
-        "Use professional, objective tone and third-person voice. Provide specific examples and context where relevant. "
-        "Format your response in Markdown with proper headings, bullet points, and detailed explanations. "
-        "Do not include any direct calls-to-action or first-person phrasing. Make the content rich and informative."
-    ),
-
-    "key_responsibility": (
-        "You are an AI Agent specializing in creating detailed key responsibilities sections for job portals. "
-        "Generate a comprehensive list of duties and responsibilities that is up to 200 words long. "
-        "Extract and expand upon the key duties based on the provided text. "
-        "If limited information is provided, generate extensive typical tasks for the role based on industry standards. "
-        "Structure your response with multiple clear headings and well-organized sections."
-        "For each responsibility, provide detailed explanations, context, and expected outcomes. "
-        "Use objective, third-person voice with specific examples and measurable objectives where possible. "
-        "Format your response in Markdown with detailed bullet points and explanations."
-    ),
-    
-    "about_company": (
-        "You are an AI Agent crafting comprehensive 'About the Company' sections for job portals. "
-        "Create a detailed company profile that is up to 200 words long. "
-        "Use the provided information and expand with relevant industry knowledge and best practices. "
-        "If minimal details are supplied, create a comprehensive company profile using general best practices. "
-        "Structure your response with multiple clear headings and well-organized sections."
-        "Write in third-person, objective tone with rich details about mission, culture, market position, and growth trajectory. "
-        "Format your response in Markdown with appropriate headings and comprehensive paragraphs."
-    ),
-    
-    "selection_process": (
-        "You are an AI Agent creating detailed selection processes for job portals. "
-        "Generate a comprehensive, multi-stage hiring workflow that is up to 200 words long. "
-        "Outline a realistic and thorough selection process typical for the role and industry. "
-        "Structure your response with multiple clear headings and well-organized sections."
-        "For each stage, provide detailed explanations of: what happens, who's involved, duration, evaluation criteria, and candidate expectations. "
-        "Use third-person, objective voice with specific timelines and processes. "
-        "If no specifics are given, describe comprehensive best-practice steps with industry-standard procedures. "
-        "Format your response in Markdown with numbered steps, detailed explanations, and timelines."
-    ),
-    
-    "qualification": (
-        "You are an AI Agent creating comprehensive qualifications sections for job portals. "
-        "Generate a detailed breakdown of qualifications and requirements that is up to 200 words long. "
-        "Extract and extensively elaborate on required skills and criteria from the provided text. "
-        "If minimal qualifications are listed, generate comprehensive typical requirements for the role. "
-        "Structure your response with multiple clear headings and well-organized sections."
-        "For each qualification, provide detailed explanations of why it's important, how it applies to the role, and what level of proficiency is expected. "
-        "Maintain a neutral, third-person tone with specific examples and contexts. "
-        "Format your response in Markdown with clear sections and comprehensive explanations."
-    )
-}
-
-
-def construct_prompt(topic: str, job_description: str, company_name: str, job_title: str, qualifications: str) -> str:
-    """Construct topic-specific prompts with relevant information"""
-    base_info = f"Company Name: {company_name}\nJob Title: {job_title}\n"
-
-    if topic == "job_description":
-        return f"""{base_info}
-Job Description Information:
-{job_description or 'No detailed description provided'}
-
-Task: Create a complete job description based on the above information, using industry-standard details where needed."""
-
-    elif topic == "key_responsibility":
-        return f"""{base_info}
-Job Description Information:
-{job_description or 'No responsibilities listed'}
-
-Task: Extract or generate key responsibilities for this position. Group similar tasks under subheadings."""
-
-    elif topic == "about_company":
-        return f"""{base_info}
-
-Task: Create an 'About the Company' section. Use provided info or general company profile conventions if missing."""
-
-    elif topic == "selection_process":
-        return f"""{base_info}
-Job Description Information:
-{job_description or 'No selection details provided'}
-
-Task: Outline a multi-stage selection process appropriate for this role and industry."""
-
-    elif topic == "qualification":
-        return f"""{base_info}Qualifications & Requirements: {qualifications or 'Not specified'}
-
-Task: List and categorize necessary qualifications. Use typical criteria if none supplied."""
-
-    else:
-        return f"""{base_info}
-Job Description Information:
-{job_description}
-
-Task: Process the above information for the topic: {topic}"""
-
-
-def markdown_to_html(markdown_content: str) -> str:
-    """Convert Markdown to HTML using python-markdown"""
-    md = markdown.Markdown(extensions=[
-        'markdown.extensions.extra',      # Tables, fenced code blocks, etc.
-        'markdown.extensions.nl2br',      # Convert newlines to <br>
-        'markdown.extensions.sane_lists', # Better list handling
-        'markdown.extensions.toc'         # Table of contents
-    ])
-    return md.convert(markdown_content)
-
-
-def mistune_to_html(markdown_content: str) -> str:
-    """Convert Markdown to HTML using mistune"""
-    renderer = mistune.HTMLRenderer()
-    md = mistune.Markdown(renderer=renderer)
-    return md(markdown_content)
-
-
-def simple_text_to_html(text_content: str) -> str:
-    """Convert simple structured text to HTML"""
-    lines = text_content.split('\n')
-    html_lines = []
-    in_list = False
-    in_ordered_list = False
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            html_lines.append('<br>')
-            continue
-            
-        # Handle headings
-        if line.startswith('# '):
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            html_lines.append(f'<h1>{line[2:].strip()}</h1>')
-        elif line.startswith('## '):
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            html_lines.append(f'<h2>{line[3:].strip()}</h2>')
-        elif line.startswith('### '):
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            html_lines.append(f'<h3>{line[4:].strip()}</h3>')
-        # Handle bullet points
-        elif line.startswith('- ') or line.startswith('* '):
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            if not in_list:
-                html_lines.append('<ul>')
-                in_list = True
-            html_lines.append(f'<li>{line[2:].strip()}</li>')
-        # Handle numbered lists
-        elif re.match(r'^\d+\.\s', line):
-            content = re.sub(r'^\d+\.\s', '', line)
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if not in_ordered_list:
-                html_lines.append('<ol>')
-                in_ordered_list = True
-            html_lines.append(f'<li>{content}</li>')
-        else:
-            if in_list:
-                html_lines.append('</ul>')
-                in_list = False
-            if in_ordered_list:
-                html_lines.append('</ol>')
-                in_ordered_list = False
-            if line:
-                html_lines.append(f'<p>{line}</p>')
-    
-    if in_list:
-        html_lines.append('</ul>')
-    if in_ordered_list:
-        html_lines.append('</ol>')
-    
-    return '\n'.join(html_lines)
-
-
-@rate_limited_retry
+@advanced_rate_limiter
 def call_groq_api(prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -> str:
-    """Make a call to the GROQ API to generate content with rate limiting"""
+    """Enhanced GROQ API call with comprehensive header processing"""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return "AI enhancement not available - missing GROQ_API_KEY"
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {api_key}", 
+        "Content-Type": "application/json"
+    }
+    
     payload = {
         "model": model,
         "messages": [
@@ -282,98 +280,140 @@ def call_groq_api(prompt: str, system_prompt: str, model: str = DEFAULT_MODEL) -
             {"role": "user", "content": prompt}
         ],
         "top_p": 0.95,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "max_tokens": 1000
     }
     
-    print(f"🌐 Making API call to GROQ...")
-    response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=60)
-    response.raise_for_status()  # This will raise HTTPError for 4xx/5xx responses
+    print(f"🌐 API call to GROQ (estimated {estimate_tokens(prompt)} tokens)...")
+    response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=120)
+    
+    # ENHANCED: Comprehensive header processing
+    update_from_server_headers(response)
+    
+    response.raise_for_status()
     
     result = response.json()["choices"][0]["message"]["content"]
-    print(f"✅ API call successful, received {len(result)} characters")
+    
+    # Update local counters
+    actual_tokens = len(result) // 4 + estimate_tokens(prompt)
+    rate_tracker.requests_per_minute += 1
+    rate_tracker.requests_per_day += 1
+    rate_tracker.tokens_per_minute += actual_tokens
+    rate_tracker.tokens_per_day += actual_tokens
+    
+    print(f"✅ API call successful ({len(result)} chars, ~{actual_tokens} tokens)")
     return result
 
+def display_comprehensive_limits():
+    """Display both local tracking and server-reported limits"""
+    global rate_tracker
+    reset_windows_if_needed()
+    
+    effective_rpm, effective_rpd, effective_tpm, effective_tpd = get_effective_limits()
+    
+    print("\n" + "=" * 80)
+    print("📊 COMPREHENSIVE RATE LIMIT STATUS")
+    print("=" * 80)
+    
+    print("🏠 LOCAL TRACKING:")
+    print(f"  Requests this minute: {rate_tracker.requests_per_minute}/{effective_rpm}")
+    print(f"  Requests today: {rate_tracker.requests_per_day}/{effective_rpd}")
+    print(f"  Tokens this minute: {rate_tracker.tokens_per_minute:,}/{effective_tpm:,}")
+    print(f"  Tokens today: {rate_tracker.tokens_per_day:,}/{effective_tpd:,}")
+    
+    print("\n🌐 SERVER REPORTED:")
+    print(f"  Remaining Requests: {rate_tracker.server_remaining_requests or 'Unknown'}")
+    print(f"  Remaining Tokens: {rate_tracker.server_remaining_tokens or 'Unknown'}")
+    print(f"  Server RPM Limit: {rate_tracker.server_rpm_limit or 'Unknown'}")
+    print(f"  Server TPM Limit: {rate_tracker.server_tpm_limit or 'Unknown'}")
+    
+    print("=" * 80)
 
 def generate_ai_enhanced_content(job_description: str, company_name: str, job_title: str, 
-                                qualifications: str = "", converter: str = "markdown") -> Dict[str, str]:
-    """
-    Main function to generate all five job content sections in HTML format with rate limiting.
+                         qualifications: str = "") -> Dict[str, str]:
+    """Generate AI-enhanced content with comprehensive rate limit monitoring"""
     
-    Args:
-        job_description (str): Basic job description or role information
-        company_name (str): Name of the company
-        job_title (str): Job title/position name
-        qualifications (str, optional): Specific qualifications if any. Defaults to "".
-        converter (str, optional): HTML converter to use ('markdown', 'mistune', 'simple'). Defaults to "markdown".
+    load_rate_limit_state()
     
-    Returns:
-        Dict[str, str]: Dictionary containing all five sections with HTML content
-    """
+    print("🛡️ ULTRA-SAFE GROQ API USAGE WITH SERVER MONITORING")
+    display_comprehensive_limits()
     
-    print(f"🚀 Starting content generation for: {job_title} at {company_name}")
-    print("=" * 60)
+    # Define system prompts for each section
+    SYSTEM_PROMPTS = {
+        "job_description": (
+            "You are an AI Agent specializing in writing comprehensive job descriptions for job portals. "
+            "Generate a detailed, thorough job description based on the provided information up to 150 words long. "
+            "Structure your response with clear headings and well-organized sections. "
+            "Use professional, objective tone. Format in Markdown."
+        ),
+        "key_responsibility": (
+            "You are an AI Agent creating key responsibilities sections for job portals. "
+            "Generate comprehensive duties list up to 150 words long. "
+            "Structure with clear headings. Use objective voice. Format in Markdown."
+        ),
+        "about_company": (
+            "You are an AI Agent crafting 'About the Company' sections for job portals. "
+            "Create detailed company profile up to 150 words long. "
+            "Use third-person tone. Format in Markdown."
+        ),
+        "selection_process": (
+            "You are an AI Agent creating selection processes for job portals. "
+            "Generate comprehensive hiring workflow up to 150 words long. "
+            "Use third-person voice. Format in Markdown."
+        ),
+        "qualification": (
+            "You are an AI Agent creating qualifications sections for job portals. "
+            "Generate detailed requirements breakdown up to 150 words long. "
+            "Use neutral tone. Format in Markdown."
+        )
+    }
     
     results = {}
-    total_sections = len(SYSTEM_PROMPTS)
+    sections = list(SYSTEM_PROMPTS.items())
     
-    # Process each section with enhanced rate limiting
-    for i, (topic, system_prompt) in enumerate(SYSTEM_PROMPTS.items(), 1):
-        print(f"📝 Generating {topic.replace('_', ' ').title()} ({i}/{total_sections})...")
+    # Extended delays between sections
+    inter_section_delay = (30, 60)  # 30-60 seconds between sections
+    
+    for i, (topic, system_prompt) in enumerate(sections, 1):
+        print(f"\n📝 Generating {topic.replace('_', ' ').title()} ({i}/{len(sections)})...")
+        print(f"Current server status before generation:")
+        display_comprehensive_limits()
         
         try:
-            # Get content from LLM with rate limiting
-            dynamic_prompt = construct_prompt(topic, job_description, company_name, job_title, qualifications)
-            raw_content = call_groq_api(dynamic_prompt, system_prompt)
+            # Construct prompt
+            prompt = f"Company: {company_name}\nJob Title: {job_title}\nDescription: {job_description}\nQualifications: {qualifications}\n\nTask: Create {topic.replace('_', ' ')} content."
             
-            # Convert to HTML based on chosen converter
-            if converter == "markdown":
-                html_content = markdown_to_html(raw_content)
-            elif converter == "mistune":
-                html_content = mistune_to_html(raw_content)
-            elif converter == "simple":
-                html_content = simple_text_to_html(raw_content)
-            else:
-                html_content = raw_content  # Keep as-is
+            # Generate content with enhanced rate limiting
+            raw_content = call_groq_api(prompt, system_prompt)
+            results[topic] = raw_content
+            
+            print(f"✅ {topic} completed successfully")
+            
+            # Extended delay between sections within the same job
+            if i < len(sections):
+                delay = random.uniform(*inter_section_delay)
+                print(f"⏳ Section cooling period: {delay:.1f}s...")
+                time.sleep(delay)
                 
-            results[topic] = html_content
-            print(f"✅ {topic.replace('_', ' ').title()} completed ({len(html_content)} characters)")
-            
-            # Enhanced inter-request delay with progress indication
-            if i < total_sections:  # Don't wait after the last request
-                base_delay = RATE_LIMIT_CONFIG['base_delay']
-                jitter = random.uniform(1, 3)
-                total_delay = base_delay + jitter
-                
-                print(f"⏳ Waiting {total_delay:.1f}s before next section to respect rate limits...")
-                print(f"📊 Progress: {i}/{total_sections} sections completed ({(i/total_sections)*100:.1f}%)")
-                time.sleep(total_delay)
-                print("-" * 60)
-            
         except Exception as e:
-            error_msg = f"❌ Error generating {topic}: {str(e)}"
-            print(error_msg)
-            results[topic] = f"<p>Error generating content: {str(e)}</p>"
-            
-            # Continue to next section even if one fails
-            print("⚠️  Continuing with next section...")
+            print(f"❌ Error generating {topic}: {str(e)}")
+            results[topic] = f"Error: {str(e)}"
     
-    print("=" * 60)
-    print(f"🎉 Content generation completed! Generated {len(results)} sections.")
-    
+    # Save state after processing
+    save_rate_limit_state()
     return results
 
-
-def batch_generate_with_smart_delays(jobs_data: list) -> list:
+def safe_batch_generate(jobs_data: list, inter_job_delay_range: tuple = (60, 120)) -> list:
     """
-    Generate content for multiple jobs with intelligent delay management
+    Ultra-safe batch generation with server header monitoring and extended delays
     
     Args:
-        jobs_data: List of job dictionaries with keys: job_description, company_name, job_title, qualifications
-        
-    Returns:
-        List of enhanced job dictionaries with generated content
+        jobs_data: List of job dictionaries
+        inter_job_delay_range: Tuple of (min, max) seconds between jobs
     """
-    print(f"🎯 Starting batch generation for {len(jobs_data)} jobs")
+    print(f"🛡️ ULTRA-SAFE BATCH MODE WITH SERVER MONITORING: {len(jobs_data)} jobs")
+    print(f"⏱️ Using {inter_job_delay_range[0]}-{inter_job_delay_range[1]}s delays between jobs")
+    
     enhanced_jobs = []
     
     for idx, job in enumerate(jobs_data, 1):
@@ -381,9 +421,12 @@ def batch_generate_with_smart_delays(jobs_data: list) -> list:
         print(f"🏢 PROCESSING JOB {idx}/{len(jobs_data)}")
         print(f"Company: {job.get('company_name', 'Unknown')}")
         print(f"Role: {job.get('job_title', 'Unknown')}")
-        print(f"{'='*80}")
+        
+        # Display comprehensive limits before processing each job
+        display_comprehensive_limits()
         
         try:
+            # Process job with enhanced rate limiting and server monitoring
             enhanced_content = generate_ai_enhanced_content(
                 job_description=job.get('job_description', ''),
                 company_name=job.get('company_name', ''),
@@ -391,80 +434,120 @@ def batch_generate_with_smart_delays(jobs_data: list) -> list:
                 qualifications=job.get('qualifications', '')
             )
             
-            # Merge original job data with enhanced content
             enhanced_job = {**job, **enhanced_content}
             enhanced_jobs.append(enhanced_job)
             
             print(f"✅ Job {idx} completed successfully")
+            print("Final status after job completion:")
+            display_comprehensive_limits()
             
-            # Add longer delay between jobs to be extra safe
+            # Extended delay between jobs
             if idx < len(jobs_data):
-                inter_job_delay = 15 + random.uniform(3, 7)  # 15-22 seconds between jobs
-                print(f"🕐 Waiting {inter_job_delay:.1f}s before next job...")
-                time.sleep(inter_job_delay)
+                delay = random.uniform(*inter_job_delay_range)
+                print(f"🕐 Extended cooling period: {delay:.1f}s before next job...")
+                time.sleep(delay)
                 
         except Exception as e:
             print(f"❌ Failed to process job {idx}: {str(e)}")
-            # Add the original job data even if enhancement failed
             enhanced_jobs.append(job)
     
-    print(f"\n🎊 BATCH PROCESSING COMPLETE!")
-    print(f"✅ Successfully processed: {len(enhanced_jobs)} jobs")
     return enhanced_jobs
 
+def save_rate_limit_state():
+    """Save comprehensive rate limit state including server data"""
+    state = {
+        'requests_per_minute': rate_tracker.requests_per_minute,
+        'requests_per_day': rate_tracker.requests_per_day,
+        'tokens_per_minute': rate_tracker.tokens_per_minute,
+        'tokens_per_day': rate_tracker.tokens_per_day,
+        'minute_window_start': rate_tracker.minute_window_start.isoformat() if rate_tracker.minute_window_start else None,
+        'day_window_start': rate_tracker.day_window_start.isoformat() if rate_tracker.day_window_start else None,
+        'server_rpm_limit': rate_tracker.server_rpm_limit,
+        'server_rpd_limit': rate_tracker.server_rpd_limit,
+        'server_tpm_limit': rate_tracker.server_tpm_limit,
+        'server_tpd_limit': rate_tracker.server_tpd_limit,
+        'server_remaining_requests': rate_tracker.server_remaining_requests,
+        'server_remaining_tokens': rate_tracker.server_remaining_tokens
+    }
+    
+    with open('rate_limit_state.json', 'w') as f:
+        json.dump(state, f)
 
-def save_content_to_files(content_dict: Dict[str, str], output_dir: str = "job_content_output"):
-    """Save each content section to separate HTML files."""
-    import os
-    
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    for section_name, content in content_dict.items():
-        filename = f"{section_name}.html"
-        filepath = os.path.join(output_dir, filename)
+def load_rate_limit_state():
+    """Load comprehensive rate limit state including server data"""
+    global rate_tracker
+    try:
+        with open('rate_limit_state.json', 'r') as f:
+            state = json.load(f)
+            
+        rate_tracker.requests_per_minute = state.get('requests_per_minute', 0)
+        rate_tracker.requests_per_day = state.get('requests_per_day', 0)
+        rate_tracker.tokens_per_minute = state.get('tokens_per_minute', 0)
+        rate_tracker.tokens_per_day = state.get('tokens_per_day', 0)
         
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
+        # Load server data
+        rate_tracker.server_rpm_limit = state.get('server_rpm_limit')
+        rate_tracker.server_rpd_limit = state.get('server_rpd_limit')
+        rate_tracker.server_tpm_limit = state.get('server_tpm_limit')
+        rate_tracker.server_tpd_limit = state.get('server_tpd_limit')
+        rate_tracker.server_remaining_requests = state.get('server_remaining_requests')
+        rate_tracker.server_remaining_tokens = state.get('server_remaining_tokens')
         
-        print(f"💾 Saved {section_name} to {filepath}")
+        if state.get('minute_window_start'):
+            rate_tracker.minute_window_start = datetime.fromisoformat(state['minute_window_start'])
+        if state.get('day_window_start'):
+            rate_tracker.day_window_start = datetime.fromisoformat(state['day_window_start'])
+            
+    except FileNotFoundError:
+        pass  # Fresh start
 
-
-def display_content_summary(content_dict: Dict[str, str]):
-    """Display a summary of generated content."""
-    print("\n" + "=" * 60)
-    print("📊 CONTENT GENERATION SUMMARY")
-    print("=" * 60)
-    
-    total_chars = 0
-    for section_name, content in content_dict.items():
-        char_count = len(content)
-        word_count = len(content.split())
-        total_chars += char_count
-        
-        print(f"📄 {section_name.replace('_', ' ').title():<25} {char_count:>6} chars | {word_count:>4} words")
-    
-    print("-" * 60)
-    print(f"📈 Total Content Generated: {total_chars:,} characters")
-    print("=" * 60)
-
-
-# Example usage and testing
+# Example usage
 if __name__ == "__main__":
-    # Example: Basic usage with enhanced rate limiting
-    print("🔥 ENHANCED JOB CONTENT GENERATION WITH RATE LIMITING")
-    job_desc = (
-        "Join Heard as a Sales Development Representative (SDR) and help connect mental health professionals "
-        "with resources to grow their practices. This role involves prospecting, lead generation, and "
-        "supporting the sales team in building relationships with potential clients."
-    )
+    # Load previous state
+    load_rate_limit_state()
     
-    content = generate_ai_enhanced_content(
-        job_description=job_desc,
-        company_name="Heard",
-        job_title="Sales Development Representative",
-        qualifications="Bachelor's degree in Business, Marketing, or related field. 1-2 years sales experience preferred.",
-    )
+    print("🛡️ ENHANCED GROQ API WITH COMPLETE JOB CONTENT GENERATION")
+    display_comprehensive_limits()
     
-    # Display summary
-    display_content_summary(content)
+    # Example single job
+    job_data = {
+        "job_description": "Sales Development Representative role focusing on mental health professionals",
+        "company_name": "Heard",
+        "job_title": "Sales Development Representative",
+        "qualifications": "Bachelor's degree, 1-2 years sales experience"
+    }
+    
+    print("\n🔥 GENERATING SINGLE JOB CONTENT:")
+    content = generate_ai_enhanced_content(**job_data)
+    
+    print("\n📋 Generated Content Preview:")
+    for section, text in content.items():
+        print(f"\n{section.upper()}:")
+        print(f"{text[:100]}..." if len(text) > 100 else text)
+    
+    # Example batch processing
+    print("\n\n🔥 EXAMPLE BATCH PROCESSING:")
+    batch_jobs = [
+        {
+            "job_description": "Frontend developer for e-commerce platform",
+            "company_name": "TechCorp",
+            "job_title": "Senior Frontend Developer",
+            "qualifications": "5+ years React experience, TypeScript"
+        },
+        {
+            "job_description": "Backend API development and database management",
+            "company_name": "DataFlow Inc",
+            "job_title": "Backend Engineer",
+            "qualifications": "Python, FastAPI, PostgreSQL experience"
+        }
+    ]
+    
+    # Uncomment to test batch processing
+    # enhanced_batch = safe_batch_generate(batch_jobs, (90, 150))  # Longer delays for safety
+    # print(f"\n✅ Batch processing completed: {len(enhanced_batch)} jobs processed")
+    
+    # Save final state
+    save_rate_limit_state()
+    
+    print("\n🎉 Complete job content generation system ready!")
+    display_comprehensive_limits()

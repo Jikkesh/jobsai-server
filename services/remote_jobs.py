@@ -9,19 +9,20 @@ from typing import List, Dict, Tuple, Set
 from PIL import Image
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-load_dotenv() 
 
-from services.description_cleaner import preprocess_job_description
-from services.text_extraction import generate_ai_enhanced_content 
+load_dotenv()
+
+from description_cleaner import preprocess_job_description
+from text_extraction import generate_ai_enhanced_content
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 # Alias map for company image lookup
 alias_map = {
-        "ernst & young": "ey",
-        "ernst and young": "ey",
-        "eurofinsscientific" : "eurofins",
-    }
+    "ernst & young": "ey",
+    "ernst and young": "ey",
+    "eurofinsscientific": "eurofins",
+}
 
 class RemoteJobGenerator:
     def __init__(
@@ -44,62 +45,130 @@ class RemoteJobGenerator:
         self.csv_path.parent.mkdir(parents=True, exist_ok=True)
         self.csv_exists = os.path.exists(self.csv_path)
 
-        # Updated CSV header with new fieldnames order
         self.fieldnames = [
             'company_name', 'job_role', 'website_link', 'state', 'city',
             'experience', 'qualification', 'batch', 'salary_package',
             'job_description', 'key_responsibility', 'about_company',
             'selection_process', 'image', 'posted_on'
         ]
-        
-        # Check if CSV exists and create with header if it doesn't
         self._ensure_csv_exists()
 
     def _ensure_csv_exists(self) -> None:
-        """Ensure CSV file exists with proper header."""
+        """Ensure CSV file exists with header if missing."""
         if not self.csv_path.exists():
             with open(self.csv_path, mode="w", newline='', encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
-            print(f"Created new CSV with header: {self.csv_path}")
-        else:
-            # Verify existing CSV has correct header
-            try:
-                with open(self.csv_path, mode="r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    existing_fields = reader.fieldnames
-                    if existing_fields != self.fieldnames:
-                        print(f"Warning: Existing CSV header {existing_fields} differs from expected {self.fieldnames}")
-            except Exception as e:
-                print(f"Error reading existing CSV: {e}")
+            self.csv_exists = True
 
     def run_all(self) -> None:
-        """Fetch, filter by age, dedupe, convert, and save to CSV."""
+        """Fetch, filter, dedupe, process each job and write immediately."""
         raw = self._fetch_job_data()
         cutoff = datetime.utcnow() - self.max_age
-        # Keep only postings within the last max_age days
-        recent = []
-        for item in raw:
-            date_str = item.get("date")
-            posted = datetime.fromisoformat(date_str.rstrip('Z')).replace(tzinfo=None)
-            if posted >= cutoff:
-                recent.append(item)
-
         existing_keys = self._load_existing_csv_keys()
-        new_items = [item for item in recent if self._make_key(item) not in existing_keys]
 
-        if not new_items:
-            print("No new recent jobs to add.")
-            return
+        for item in raw:
+            # Filter out old posts
+            date_str = item.get("date") or ""
+            try:
+                posted_dt = datetime.fromisoformat(date_str.rstrip('Z')).replace(tzinfo=None)
+            except:
+                continue
+            if posted_dt < cutoff:
+                continue
 
-        converted = self._convert_data(new_items)
-        self._append_to_csv(converted)
-        print(f"Saved {len(converted)} new jobs to CSV.")
+            key = self._make_key(item)
+            if key in existing_keys:
+                continue
+
+            try:
+                record = self._process_single(item)
+                self._append_to_csv([record])
+                existing_keys.add(key)
+                print(f"✅ Saved job: {record['company_name']} - {record['job_role']}")
+            except Exception as e:
+                print(f"⚠️ Failed processing {item.get('company')} - {item.get('position')}: {e}")
+
+    def _process_single(self, item: Dict) -> Dict:
+        """Convert a single raw job dict into CSV-ready record."""
+        company = item.get("company", "Not Specified")
+        title = item.get("position", "")
+        website = item.get("apply_url") or item.get("url", "")
+        loc = item.get("location", "Remote") or "Remote"
+        if loc.lower() == "remote":
+            state, city = "Remote", "Remote"
+        else:
+            parts = loc.split(',')
+            city = parts[0].strip() if parts else loc.strip()
+            state = parts[1].strip() if len(parts) > 1 else ""
+
+        salary_min = item.get("salary_min") or "Not Specified"
+        salary_max = item.get("salary_max") or ""
+        salary = f"{salary_min} - {salary_max}" if salary_max else salary_min
+
+        # Parse and normalize date
+        date_str = item.get("date", "")
+        posted_iso = datetime.fromisoformat(date_str.rstrip('Z')).replace(tzinfo=None).isoformat()
+
+        # Clean description
+        raw_html = item.get("description", "")
+        soup = BeautifulSoup(raw_html, "html.parser")
+        plain_desc = soup.get_text(separator="\n").strip()
+        try:
+            processed_desc = preprocess_job_description(plain_desc, max_words=350)
+            print("✅ Processed job description successfully.")
+            print("Processed Description:")
+            print(processed_desc)
+        except Exception:
+            words = plain_desc.split()
+            processed_desc = ' '.join(words[:500])
+
+        # AI-enhanced fields
+        enhanced = generate_ai_enhanced_content(
+            job_description=processed_desc,
+            company_name=company,
+            job_title=title,
+            qualifications=""
+        )
+
+        # Fetch or reuse company logo
+        image_filename = self.get_company_image(company)
+        time.sleep(5)
+
+        return {
+            "company_name": company,
+            "job_role": title,
+            "website_link": website,
+            "state": state,
+            "city": city,
+            "experience": enhanced.get("experience", "Any Experience"),
+            "qualification": enhanced.get("qualification", "Not Specified"),
+            "batch": "Not Specified",
+            "salary_package": salary,
+            "job_description": enhanced.get("job_description", ""),
+            "key_responsibility": enhanced.get("key_responsibility", ""),
+            "about_company": enhanced.get("about_company", ""),
+            "selection_process": enhanced.get("selection_process", ""),
+            "image": image_filename,
+            "posted_on": posted_iso
+        }
+
+    def _append_to_csv(self, items: List[Dict]) -> None:
+        """Append records to CSV, writing header only once."""
+        mode = 'a' if self.csv_exists else 'w'
+        with open(self.csv_path, mode, newline='', encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.fieldnames)
+            if not self.csv_exists:
+                writer.writeheader()
+                self.csv_exists = True
+            for job in items:
+                writer.writerow(job)
 
     def _make_key(self, item: Dict) -> Tuple[str, str, str]:
+        """Generate unique key based on company, role, and post date."""
         company = item.get("company", "").strip().lower()
         role = item.get("position", "").strip().lower()
-        date_str = item.get("date") or ""
+        date_str = item.get("date", "")
         try:
             posted = datetime.fromisoformat(date_str.rstrip('Z')).replace(tzinfo=None)
         except:
@@ -107,6 +176,7 @@ class RemoteJobGenerator:
         return (company, role, posted.isoformat())
 
     def _load_existing_csv_keys(self) -> Set[Tuple[str, str, str]]:
+        """Load set of keys from existing CSV to avoid duplicates."""
         keys: Set[Tuple[str, str, str]] = set()
         if not self.csv_path.exists():
             return keys
@@ -122,16 +192,17 @@ class RemoteJobGenerator:
         except Exception as e:
             print(f"Error reading existing CSV keys: {e}")
         return keys
-    
-    def load_existing_images(self):
-        """Load list of existing company images"""
+
+    def load_existing_images(self) -> None:
+        """Populate existing_images set from disk."""
         for filename in self.images_dir.iterdir():
             if filename.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                company_name = filename.name.rsplit('.', 1)[0].replace('_', '/')
-                self.existing_images.add(company_name.lower())
+                key = filename.stem.lower()
+                self.existing_images.add(key)
         print(f"🖼️ Found {len(self.existing_images)} existing company images")
 
     def _fetch_job_data(self) -> List[Dict]:
+        """Fetch raw job data from RemoteOK API."""
         url = "https://remoteok.com/api"
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
@@ -139,177 +210,42 @@ class RemoteJobGenerator:
         data = resp.json()
         return [d for d in data if isinstance(d, dict) and "id" in d]
 
-    def _convert_data(self, raw_jobs: List[Dict]) -> List[Dict]:
-        converted: List[Dict] = []
-        for item in raw_jobs:
-            company = item.get("company", "Not Specified")
-            title = item.get("position", "")
-            website = item.get("apply_url") or item.get("url", "")
-            loc = item.get("location", "Remote") or "Remote"
-            salary_min = item.get("salary_min", "Not Specified")
-            salary_max = item.get("salary_max", "Not Specified")
-            salary = f"{salary_min} - {salary_max}" if salary_min and salary_max else "Not Specified"
-            # Parse location into state and city
-            if loc.lower() == "remote":
-                state, city = "Remote", "Remote"
-            else:
-                # Simple parsing - you may want to enhance this based on your data
-                parts = loc.split(',')
-                if len(parts) >= 2:
-                    city = parts[0].strip()
-                    state = parts[1].strip()
-                else:
-                    city = loc.strip()
-                    state = ""
-
-            # Parse date
-            date_str = item.get("date")
-            posted_dt = datetime.fromisoformat(date_str.rstrip('Z')).replace(tzinfo=None)
-            posted_iso = posted_dt.isoformat()
-
-            # Plain text description
-            raw_html = item.get("description", "")
-            soup = BeautifulSoup(raw_html, "html.parser")
-            
-            # Remove unwanted words and summarize description
-            plain_desc = soup.get_text(separator="\n").strip()
-            
-            try:
-                # Clean and summarize the job description
-                processed_desc = preprocess_job_description(plain_desc, max_words=350)
-                print(f"✅ Job description preprocessed successfully")
-
-                # Alternative: Use section extraction if you want more control
-                # processed_result = preprocess_with_section_extraction(plain_desc)
-                # processed_desc = processed_result["processed_description"]
-                # sections = processed_result["sections"]  # You could use individual sections if needed
-            
-            except Exception as e:
-                print(f"⚠️  Warning: Preprocessing failed for {company} - {title}: {e}")
-                # Fallback: use first 500 words of plain text
-                words = plain_desc.split()
-                processed_desc = ' '.join(words[:500]) if len(words) > 500 else plain_desc
-
-            # Length check for description
-            print("Description length:", len(processed_desc.split()))
-
-            # AI-enhanced structured fields
-            enhanced = generate_ai_enhanced_content(
-                job_description=processed_desc,
-                company_name=company,
-                job_title=title,
-                qualifications=""
-            )
-
-            # Generate image filename as company_name.png
-            image_filename = self.get_company_image(company)
-
-            converted.append({
-                "company_name": company,
-                "job_role": title,
-                "website_link": website or "",
-                "state": state,
-                "city": city,
-                "experience": enhanced.get("experience", "Any Experience"),
-                "qualification": enhanced.get("qualification", "Not Specified"),
-                "batch": "Not Specified",
-                "salary_package": salary,
-                "job_description": enhanced.get("job_description", ""),
-                "key_responsibility": enhanced.get("key_responsibility", ""),
-                "about_company": enhanced.get("about_company", ""),
-                "selection_process": enhanced.get("selection_process", ""),
-                "image": image_filename,
-                "posted_on": posted_iso
-            })
-            time.sleep(5)
-        return converted
-
-    def _append_to_csv(self, items: List[Dict]) -> None:
-        """Append new job items to CSV using DictWriter for proper field ordering."""
-        if self.csv_exists:
-            # Append to existing file
-            mode = 'a'
-            write_header = False
-            action = "APPENDED TO EXISTING"
-        else:
-            # Create new file
-            mode = 'w'
-            write_header = True
-            action = "CREATED NEW"
-        
-        with open(self.csv_path, mode, newline='', encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self.fieldnames)
-            if write_header:
-                writer.writeheader()
-            for job in items:
-                writer.writerow(job)
-
-    def get_company_image(self, company_name: str, size=(400, 200)) -> str:
-        """Fetch company logo from Clearbit API with alias and suffix handling"""
+    def get_company_image(self, company_name: str, size: Tuple[int, int] = (400, 200)) -> str:
+        """Fetch or reuse a company logo via Clearbit."""
         if not company_name or company_name.lower() == "not specified":
             return ""
 
-        # Step 1: Normalize name
         company_key = company_name.strip().lower()
+        # Trim common suffixes
+        for suffix in [" technologies", "technology", "solutions", "solution", "pvt ltd", "private limited", "ltd", "limited", "inc", "corp", "corporation"]:
+            if company_key.endswith(suffix):
+                company_key = company_key[: -len(suffix)]
+                break
+        lookup = alias_map.get(company_key, company_key)
 
-        # Step 2: Handle known aliases or suffix trimming
-        for suffix in [" technologies", "technology", "Solutions", "Solution", "Pvt Ltd", " Pvt. Ltd", " Private Limited", " Ltd", " Limited", " Inc", " Corporation", " Corp"]:
-                if company_key.endswith(suffix):
-                    company_key = company_key.replace(suffix, "")
-                    break
-            
-        if company_key in alias_map:
-            lookup_name = alias_map[company_key]
-        else:
-            lookup_name = company_key
+        filename = f"{company_name}.png"
+        save_path = self.images_dir / filename
+        if company_key in self.existing_images or save_path.exists():
+            return filename
 
-        image_filename = f"{company_name}.png"
-        save_path = self.images_dir / image_filename
-
-        # Check if already exists
-        if company_name.lower() in self.existing_images:
-            print(f"  🖼️ Company image already exists: {image_filename}")
-            return image_filename
-
-        if os.path.exists(save_path):
-            print(f"  🖼️ Company image file already exists: {image_filename}")
-            self.existing_images.add(company_name.lower())
-            return image_filename
-
-        # Build domain for logo fetching
-        domain = lookup_name.replace(" ", "").replace("pvt", "").replace("ltd", "") + ".com"
+        domain = lookup.replace(" ", "").replace("pvt", "").replace("ltd", "") + ".com"
         logo_url = f"https://logo.clearbit.com/{domain}"
 
         try:
-            print(f"  🌐 Fetching logo for {company_name}...")
-            response = requests.get(logo_url, timeout=10)
-            response.raise_for_status()
-
-            logo = Image.open(BytesIO(response.content)).convert("RGBA")
-            white_bg = Image.new("RGBA", logo.size, (255, 255, 255, 255))
-            combined = Image.alpha_composite(white_bg, logo)
-
-            combined.thumbnail(size, Image.LANCZOS)
-            final = Image.new("RGB", size, (255, 255, 255))
-            position = (
-                (size[0] - combined.width) // 2,
-                (size[1] - combined.height) // 2
-            )
-            final.paste(combined.convert("RGB"), position)
-
-            final.save(save_path)
-            self.existing_images.add(company_name.lower())
-            print(f"  ✅ Successfully saved logo: {image_filename}")
-            return image_filename
-
-        except requests.RequestException as e:
-            image_filename = f"hiring.png"
-            print(f"  ❌ Failed to fetch logo for {company_name}: {e} - using default image")
-            return image_filename
-        except Exception as e:
-            image_filename = f"hiring.png"
-            print(f"  ❌ Error processing logo for {company_name}: {e} - using default image")
-            return image_filename
+            resp = requests.get(logo_url, timeout=10)
+            resp.raise_for_status()
+            logo = Image.open(BytesIO(resp.content)).convert("RGBA")
+            bg = Image.new("RGBA", logo.size, (255,255,255,255))
+            comp = Image.alpha_composite(bg, logo)
+            comp.thumbnail(size, Image.LANCZOS)
+            canvas = Image.new("RGB", size, (255,255,255))
+            pos = ((size[0]-comp.width)//2, (size[1]-comp.height)//2)
+            canvas.paste(comp.convert("RGB"), pos)
+            canvas.save(save_path)
+            self.existing_images.add(company_key)
+            return filename
+        except Exception:
+            return "hiring.png"
 
 if __name__ == "__main__":
     RemoteJobGenerator().run_all()
