@@ -5,7 +5,7 @@ import requests
 import os
 from dotenv import load_dotenv
 
-from text_extraction import advanced_rate_limiter
+from services.text_extraction import advanced_rate_limiter
 
 load_dotenv()
 

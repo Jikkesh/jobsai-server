@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from description_cleaner import preprocess_job_description
-from text_extraction import generate_ai_enhanced_content
+from services.description_cleaner import preprocess_job_description
+from services.text_extraction import generate_ai_enhanced_content
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 

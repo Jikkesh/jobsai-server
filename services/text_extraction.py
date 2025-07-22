@@ -328,6 +328,16 @@ def display_comprehensive_limits():
     print(f"  Server TPM Limit: {rate_tracker.server_tpm_limit or 'Unknown'}")
     
     print("=" * 80)
+    
+def markdown_to_html(markdown_content: str) -> str:
+    """Convert Markdown to HTML using python-markdown"""
+    md = markdown.Markdown(extensions=[
+        'markdown.extensions.extra',      # Tables, fenced code blocks, etc.
+        'markdown.extensions.nl2br',      # Convert newlines to <br>
+        'markdown.extensions.sane_lists', # Better list handling
+        'markdown.extensions.toc'         # Table of contents
+    ])
+    return md.convert(markdown_content)
 
 def generate_ai_enhanced_content(job_description: str, company_name: str, job_title: str, 
                          qualifications: str = "") -> Dict[str, str]:
@@ -385,7 +395,7 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
             
             # Generate content with enhanced rate limiting
             raw_content = call_groq_api(prompt, system_prompt)
-            results[topic] = raw_content
+            results[topic] = markdown_to_html(raw_content)
             
             print(f"✅ {topic} completed successfully")
             

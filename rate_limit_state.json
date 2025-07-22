@@ -1,0 +1,1 @@
+{"requests_per_minute": 1, "requests_per_day": 10, "tokens_per_minute": 607, "tokens_per_day": 6914, "minute_window_start": "2025-07-22T09:36:34.352147", "day_window_start": "2025-07-22T09:31:03.797031", "server_rpm_limit": 14400, "server_rpd_limit": null, "server_tpm_limit": 15000, "server_tpd_limit": null, "server_remaining_requests": 14399, "server_remaining_tokens": 14618}

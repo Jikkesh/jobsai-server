@@ -42,5 +42,3 @@ build/
 gradio_cache/
 .gradio/
 
-# Ignore csv files
-*.csv
