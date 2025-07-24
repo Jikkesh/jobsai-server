@@ -382,8 +382,8 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
     sections = list(SYSTEM_PROMPTS.items())
     
     # Extended delays between sections
-    inter_section_delay = (30, 60)  # 30-60 seconds between sections
-    
+    inter_section_delay = (25, 35)  # 25-35 seconds between sections
+
     for i, (topic, system_prompt) in enumerate(sections, 1):
         print(f"\n📝 Generating {topic.replace('_', ' ').title()} ({i}/{len(sections)})...")
         print(f"Current server status before generation:")
