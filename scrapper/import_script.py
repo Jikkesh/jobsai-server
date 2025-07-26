@@ -213,7 +213,7 @@ def main():
     # Define the CSV files and their categories
     base_dir = Path(__file__).resolve().parent
     csv_files = [
-        (base_dir / 'freshers_final.csv', 'Fresher'),
+        (base_dir / 'freshers_final_cleaned.csv', 'Fresher'),
         (base_dir / 'internships_final.csv', 'Internship')
     ]
 
