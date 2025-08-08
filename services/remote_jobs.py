@@ -162,7 +162,8 @@ class RemoteJobGenerator:
                 writer.writeheader()
                 self.csv_exists = True
             for job in items:
-                writer.writerow(job)
+                if job.get("company_name") != "Not Specified" and job.get("job_role") != "Not Specified":
+                    writer.writerow(job)
 
     def _make_key(self, item: Dict) -> Tuple[str, str, str]:
         """Generate unique key based on company, role, and post date."""

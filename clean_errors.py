@@ -11,7 +11,8 @@ csv_files = [
 # Define both error types to check for
 ERROR_TYPES = [
     '<p>Error generating content: 400 Client Error: Bad Request for url: https://api.groq.com/openai/v1/chat/completions</p>',
-    'Error: random.Random.uniform() argument after * must be an iterable, not int'
+    'Error: random.Random.uniform() argument after * must be an iterable, not int',
+    'Not specified'
 ]
 
 # Columns to inspect
@@ -21,6 +22,9 @@ CHECK_COLS = [
     'key_responsibility',
     'about_company',
     'selection_process',
+    'company_name',
+    'job_role',
+    'website_link'
 ]
 
 def clean_error_rows(df: pd.DataFrame, cols: list, error_strings: list) -> pd.DataFrame:
