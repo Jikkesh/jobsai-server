@@ -544,7 +544,7 @@ class JobScrapingOrchestrator:
             
             job_details = self.scrape_detailed_job_info(job_link)
 
-            if job_details and (job_details.get('company_name') != 'Not specified' or job_details.get('job_role') != 'Not specified'):
+            if job_details and job_details.get('company_name') != 'Not specified' and job_details.get('job_role') != 'Not specified':
                 enhanced_job = {
                     'no': i,
                     'original_company': job.get('company', ''),
