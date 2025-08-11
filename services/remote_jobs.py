@@ -132,7 +132,7 @@ class RemoteJobGenerator:
         )
 
         # Fetch or reuse company logo
-        image_filename = self.get_company_image(company)
+        image_filename = self.fetch_image_via_backend(company)
         time.sleep(5)
 
         return {
@@ -210,6 +210,27 @@ class RemoteJobGenerator:
         resp.raise_for_status()
         data = resp.json()
         return [d for d in data if isinstance(d, dict) and "id" in d]
+
+    def fetch_image_via_backend(self, company_name: str, timeout: int = 15) -> str | None:
+        """Call the centralized upload API once and return the saved filename (or None)."""
+        if not company_name or company_name == "Not specified":
+            return None
+        if not self.backend_api:
+            return None
+
+        try:
+            url = f"{self.backend_api}/upload-image/"
+            # We're sending company_name as query param to match your FastAPI signature.
+            resp = self.session.post(url, params={"company_name": company_name}, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            image_url = data.get("url") or data.get("file") or ""
+            if not image_url:
+                return "hiring.png"
+            return image_url
+        except Exception as e:
+            print(f"  ❌ Backend upload failed for {company_name}: {e}")
+            return None
 
     def get_company_image(self, company_name: str, size: Tuple[int, int] = (400, 200)) -> str:
         """Fetch or reuse a company logo via Clearbit."""

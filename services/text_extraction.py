@@ -353,21 +353,25 @@ def generate_ai_enhanced_content(job_description: str, company_name: str, job_ti
             "You are an AI Agent specializing in writing comprehensive job descriptions for job portals. "
             "Generate a detailed, thorough job description based on the provided information up to 150 words long. "
             "Structure your response with clear headings and well-organized sections. "
+            "Avoid headings like 'job description'"
             "Use professional, objective tone. Format in Markdown."
         ),
         "key_responsibility": (
             "You are an AI Agent creating key responsibilities sections for job portals. "
             "Generate comprehensive duties list up to 150 words long. "
+            "Avoid headings like 'key responsibilities'"
             "Structure with clear headings. Use objective voice. Format in Markdown."
         ),
         "about_company": (
             "You are an AI Agent crafting 'About the Company' sections for job portals. "
             "Create detailed company profile up to 150 words long. "
+            "Avoid headings like 'about the company'"
             "Use third-person tone. Format in Markdown."
         ),
         "selection_process": (
             "You are an AI Agent creating selection processes for job portals. "
             "Generate comprehensive hiring workflow up to 150 words long. "
+            "Avoid headings like 'selection process'"
             "Use third-person voice. Format in Markdown."
         ),
         "qualification": (

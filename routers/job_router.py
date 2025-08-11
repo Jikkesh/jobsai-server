@@ -5,6 +5,11 @@ from db import get_db
 from models import Job
 from schemas import CategoryResponse, JobCreate, JobOut, JobResponse, JobUpdate
 from typing import Dict, List
+from sqlalchemy.exc import OperationalError
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
@@ -26,27 +31,6 @@ def job_to_response(job: Job, request: Request) -> JobResponse:
 # Endpoints
 # -------------------------------------------------------------------
 
-@router.get("/top_jobs", response_model=Dict[str, List[CategoryResponse]])
-def get_top_jobs(request: Request, db: Session = Depends(get_db)):
-    """
-    Retrieve the top 5 jobs for each specified category.
-    
-    Categories: Fresher, Internship, Remote, Part_time.
-    The result is a dictionary where keys are the category names in lowercase
-    and values are lists of CategoryResponse objects.
-    """
-    categories = ["Fresher", "Internship", "Remote", "Part_time"]
-    jobs_by_category = {}
-
-    for category in categories:
-        jobs = db.query(Job).filter(Job.category == category).order_by(Job.posted_on.desc()).limit(6).all()
-        job_responses = [job_to_response(job, request) for job in jobs]
-        jobs_by_category[category.lower()] = [
-            CategoryResponse(category=category, jobs_data=job_responses)
-        ]
-
-    return jobs_by_category
-
 @router.get("/category/{category}", response_model=dict)
 def get_jobs_by_category(
     request: Request,
@@ -56,12 +40,30 @@ def get_jobs_by_category(
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve paginated jobs for a given category.
+    Retrieve paginated jobs for a given category with retry on connection drop.
     """
-    query = db.query(Job).filter(Job.category == category).order_by(Job.posted_on.desc())
+    try:
+        return _fetch_jobs_by_category(request, category, page, page_size, db)
+
+    except OperationalError as e:
+        logger.warning(f"Database connection dropped, retrying query: {e}")
+        db.rollback()  # rollback broken transaction
+        try:
+            return _fetch_jobs_by_category(request, category, page, page_size, db)
+        except Exception as e2:
+            logger.error(f"Retry failed: {e2}")
+            raise HTTPException(status_code=500, detail="Database connection error")
+
+
+def _fetch_jobs_by_category(request, category, page, page_size, db):
+    query = (
+        db.query(Job)
+        .filter(Job.category == category.title())
+        .order_by(Job.posted_on.desc())
+    )
     total_count = query.count()
     jobs = query.offset((page - 1) * page_size).limit(page_size).all()
-    
+
     return {
         "jobs": [job_to_response(job, request) for job in jobs],
         "totalCount": total_count

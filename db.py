@@ -13,7 +13,11 @@ DATABASE_URL = f"{CONNECTION_STRING}"
 if DATABASE_URL is None:
     raise ValueError("DATABASE_URL environment variable not set")
 
-engine = create_engine(DATABASE_URL) # type: ignore
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=1800
+) # type: ignore
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
