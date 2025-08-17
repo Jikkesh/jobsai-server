@@ -23,6 +23,7 @@ class Job(Base):
     selection_process = Column(Text, nullable=True)
     image = Column(String, nullable=True)
     posted_on = Column(DateTime, nullable=False) 
+    job_slug = Column(String, unique=True, index=True, nullable=True)
     
 
 class User(Base):
