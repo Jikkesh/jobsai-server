@@ -16,7 +16,6 @@ from pathlib import Path
 # load .env file to environment
 load_dotenv()
 
-
 class JobScrapingOrchestrator:
     def __init__(self, base_url="https://freshercareers.in/category/fresher-jobs/"):
         self.base_url = base_url
@@ -29,7 +28,6 @@ class JobScrapingOrchestrator:
         self.failed_links = []
         self.two_months_ago = datetime.now() - timedelta(days=60)  # 60 days back
         self.existing_jobs = set()  # Store existing job signatures
-        self.backend_api = os.getenv("BACKEND_API", "http://localhost:4000").rstrip("/") 
 
         self.existing_images = set()  # Store existing company images
         
@@ -165,26 +163,26 @@ class JobScrapingOrchestrator:
             print(f"  ❌ Error processing logo for {company_name}: {e} - using default image")
             return image_filename
         
-    def fetch_image_via_backend(self, company_name: str, timeout: int = 15) -> str | None:
-        """Call the centralized upload API once and return the saved filename (or None)."""
-        if not company_name or company_name == "Not specified":
-            return None
-        if not self.backend_api:
-            return None
+    # def fetch_image_via_backend(self, company_name: str, timeout: int = 15) -> str | None:
+    #     """Call the centralized upload API once and return the saved filename (or None)."""
+    #     if not company_name or company_name == "Not specified":
+    #         return None
+    #     if not self.backend_api:
+    #         return None
 
-        try:
-            url = f"{self.backend_api}/upload-image/"
-            # We're sending company_name as query param to match your FastAPI signature.
-            resp = self.session.post(url, params={"company_name": company_name}, timeout=timeout)
-            resp.raise_for_status()
-            data = resp.json()
-            image_url = data.get("url") or data.get("file") or ""
-            if not image_url:
-                return "hiring.png"
-            return image_url
-        except Exception as e:
-            print(f"  ❌ Backend upload failed for {company_name}: {e}")
-            return None
+    #     try:
+    #         url = f"{self.backend_api}/upload-image/"
+    #         # We're sending company_name as query param to match your FastAPI signature.
+    #         resp = self.session.post(url, params={"company_name": company_name}, timeout=timeout)
+    #         resp.raise_for_status()
+    #         data = resp.json()
+    #         image_url = data.get("url") or data.get("file") or ""
+    #         if not image_url:
+    #             return "hiring.png"
+    #         return image_url
+    #     except Exception as e:
+    #         print(f"  ❌ Backend upload failed for {company_name}: {e}")
+    #         return None
 
     # ==================== BASIC JOB LISTING SCRAPER ====================
     
@@ -608,9 +606,10 @@ class JobScrapingOrchestrator:
             # Generate AI-enhanced content
             ai_content = generate_ai_enhanced_content(job_description, job.get('company_name', 'Unknown'), job.get('job_role', 'Unknown'), job.get('qualifications', 'Unknown'))
 
-            # Fetch company image with duplicate check
-            image_path = self.fetch_image_via_backend(job.get('company_name', 'Not specified'))
-            
+            # Take firstname and lower this
+            company_name = (job.get('company_name') or 'hiring').strip().split()[0].lower()
+            image_path = f"{company_name}.png"
+
             # Create final job record matching the database schema
             final_job = {
                 'company_name': job.get('company_name', 'Not specified'),
